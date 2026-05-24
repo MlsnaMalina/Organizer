@@ -484,7 +484,8 @@ function MonthHeader({ state, dispatch }) {
 }
 
 function CalendarGrid({ state, dispatch }) {
-  const { currentYear, currentMonth, events, tasks, categories, selectedDay } = state;
+  const { currentYear, currentMonth, tasks, categories, selectedDay } = state;
+  const events = allEvents(state);
   const dim = daysInMonth(currentYear, currentMonth);
   const offset = firstDayOffset(currentYear, currentMonth);
   const today = todayStr();
@@ -625,7 +626,7 @@ function DayDetail({ state, dispatch }) {
   if (!state.selectedDay) return null;
 
   const { y, m, d } = parseDate(state.selectedDay);
-  const dayEvents = state.events.filter(e =>
+  const dayEvents = allEvents(state).filter(e =>
     (e.type !== 'birthday' && e.date === state.selectedDay) ||
     (e.type === 'birthday' && e.date.slice(5) === `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`)
   );
@@ -829,7 +830,12 @@ function EventCard({ event, dispatch }) {
 
   return (
     <div
-      onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'editEvent', data: event } })}
+      onClick={() => dispatch({
+        type: 'OPEN_MODAL',
+        modal: event._derived
+          ? { type: 'people' }
+          : { type: 'editEvent', data: event }
+      })}
       style={{
         display: 'flex',
         background: TOKENS.bg,
@@ -1757,7 +1763,7 @@ function DayDetailModal({ state, dispatch, onClose, day }) {
   const { y, m, d } = parseDate(day);
   const dateObj = new Date(y, m, d);
   const mmdd = day.slice(5);
-  const events = state.events.filter(e =>
+  const events = allEvents(state).filter(e =>
     (e.type !== 'birthday' && e.date === day) ||
     (e.type === 'birthday' && e.date.slice(5) === mmdd)
   );
@@ -1894,27 +1900,77 @@ function DayDetailModal({ state, dispatch, onClose, day }) {
   );
 }
 
+// Odvozené události z narozenin lidí — automaticky se zobrazí v kalendáři.
+// Pokud má víc lidí stejné křestní jméno (a obě mají narozeniny), přidá se k jménu i příjmení.
+function getPeopleBirthdayEvents(people) {
+  const list = (people || []).filter(p => p.birthday);
+  const firstNameCounts = {};
+  list.forEach(p => {
+    const k = (p.name || '').trim().toLowerCase();
+    firstNameCounts[k] = (firstNameCounts[k] || 0) + 1;
+  });
+  return list.map(p => {
+    const k = (p.name || '').trim().toLowerCase();
+    const showSurname = firstNameCounts[k] > 1 && p.surname && p.surname.trim();
+    return {
+      id: `person-bday-${p.id}`,
+      type: 'birthday',
+      date: p.birthday,
+      person: showSurname ? `${p.name} ${p.surname}` : p.name,
+      _derived: true,
+      _personId: p.id,
+    };
+  });
+}
+
+// Sjednocený seznam událostí (uživatelské + odvozené z narozenin lidí)
+function allEvents(state) {
+  return [...(state.events || []), ...getPeopleBirthdayEvents(state.people)];
+}
+
+// Parsuje uživatelský zápis "DD.MM" / "D.M" / "DD.MM." na interní 'MM-DD'
+function parseDdMm(input) {
+  if (!input) return null;
+  const m = input.trim().match(/^(\d{1,2})\.\s*(\d{1,2})\.?$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10);
+  const mon = parseInt(m[2], 10);
+  if (day < 1 || day > 31 || mon < 1 || mon > 12) return null;
+  return `${String(mon).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function fmtDdMm(mmdd) {
+  if (!mmdd) return '—';
+  const m = parseInt(mmdd.slice(0,2), 10);
+  const d = parseInt(mmdd.slice(3), 10);
+  return `${d}. ${MONTHS_LOWER[m - 1]}`;
+}
+
 function PeopleList({ state, dispatch, onClose }) {
   const [name, setName] = useState('');
+  const [surname, setSurname] = useState('');
   const [birthday, setBirthday] = useState('');
   const [customNameDay, setCustomNameDay] = useState('');
 
   const detected = nameDayFor(name);
-  const detectedLabel = detected ? `${parseInt(detected.slice(3), 10)}. ${MONTHS_LOWER[parseInt(detected.slice(0,2), 10) - 1]}` : null;
-  const people = (state.people || []).slice().sort((a,b) => a.name.localeCompare(b.name, 'cs'));
+  const detectedLabel = detected ? fmtDdMm(detected) : null;
+  const people = (state.people || []).slice().sort((a,b) =>
+    (a.name + ' ' + (a.surname || '')).localeCompare(b.name + ' ' + (b.surname || ''), 'cs')
+  );
 
   const add = () => {
     const n = name.trim();
     if (!n) return;
-    const nd = customNameDay || detected || null;
+    const nd = detected || parseDdMm(customNameDay) || null;
     const person = {
       id: uid(),
       name: n,
+      surname: surname.trim() || null,
       nameDay: nd, // 'MM-DD' or null
       birthday: birthday || null, // 'YYYY-MM-DD' or null
     };
     dispatch({ type: 'ADD_PERSON', person });
-    setName(''); setBirthday(''); setCustomNameDay('');
+    setName(''); setSurname(''); setBirthday(''); setCustomNameDay('');
   };
 
   const remove = (id) => {
@@ -1923,13 +1979,6 @@ function PeopleList({ state, dispatch, onClose }) {
 
   const updateField = (person, field, value) => {
     dispatch({ type: 'UPDATE_PERSON', person: { ...person, [field]: value || null } });
-  };
-
-  const fmtMmdd = (mmdd) => {
-    if (!mmdd) return '—';
-    const m = parseInt(mmdd.slice(0,2), 10);
-    const d = parseInt(mmdd.slice(3), 10);
-    return `${d}. ${MONTHS_LOWER[m - 1]}`;
   };
 
   return (
@@ -1948,28 +1997,39 @@ function PeopleList({ state, dispatch, onClose }) {
         flexDirection: 'column',
         gap: '10px',
       }}>
-        <Field label="Jméno">
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="např. Petr"
-            style={inputStyle}
-          />
-          {name.trim() && (
-            <div style={{ marginTop: '6px', fontSize: '11.5px', fontFamily: FONTS.body, color: detected ? TOKENS.accent : TOKENS.textMuted }}>
-              {detected ? `Svátek: ${detectedLabel}` : 'Svátek se nenašel — můžeš zadat datum ručně níže.'}
-            </div>
-          )}
-        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <Field label="Jméno">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="např. Petr"
+              style={inputStyle}
+            />
+          </Field>
+          <Field label="Příjmení (volitelné)">
+            <input
+              value={surname}
+              onChange={(e) => setSurname(e.target.value)}
+              placeholder="např. Novák"
+              style={inputStyle}
+            />
+          </Field>
+        </div>
+        {name.trim() && (
+          <div style={{ marginTop: '-4px', fontSize: '11.5px', fontFamily: FONTS.body, color: detected ? TOKENS.accent : TOKENS.textMuted }}>
+            {detected ? `Svátek: ${detectedLabel}` : 'Svátek se nenašel — můžeš zadat datum ručně níže.'}
+          </div>
+        )}
 
         {name.trim() && !detected && (
-          <Field label="Svátek (datum, MM-DD)">
+          <Field label="Svátek (datum, formát DD.MM)">
             <input
               type="text"
+              inputMode="numeric"
               value={customNameDay}
               onChange={(e) => setCustomNameDay(e.target.value)}
-              placeholder="např. 05-22"
+              placeholder="např. 22.5"
               style={inputStyle}
             />
           </Field>
@@ -2069,12 +2129,15 @@ function PeopleList({ state, dispatch, onClose }) {
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
-                }}>{p.name}</div>
+                }}>
+                  {p.name}
+                  {p.surname && <span style={{ color: TOKENS.textSecondary, fontWeight: 500 }}> {p.surname}</span>}
+                </div>
                 <div style={{
                   fontFamily: FONTS.body,
                   fontSize: '12.5px',
                   color: p.nameDay ? TOKENS.text : TOKENS.textMuted,
-                }}>{fmtMmdd(p.nameDay)}</div>
+                }}>{fmtDdMm(p.nameDay)}</div>
                 <input
                   type="date"
                   value={p.birthday || ''}
@@ -2874,7 +2937,8 @@ function EditableNote({ state, dispatch }) {
 // ============ MINI MONTH ============
 
 function MiniMonth({ state, dispatch }) {
-  const { currentYear, currentMonth, events, tasks, selectedDay } = state;
+  const { currentYear, currentMonth, tasks, selectedDay } = state;
+  const events = allEvents(state);
   const dim = daysInMonth(currentYear, currentMonth);
   const offset = firstDayOffset(currentYear, currentMonth);
   const today = todayStr();
@@ -3173,7 +3237,7 @@ function SlimRibbon({ state }) {
 
 function TimelineStrip({ state, dispatch }) {
   const today = todayStr();
-  const todayEvents = state.events.filter(e => {
+  const todayEvents = allEvents(state).filter(e => {
     const { y, m, d } = parseDate(today);
     const mmdd = `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     return (e.type !== 'birthday' && e.date === today) ||
@@ -3452,7 +3516,8 @@ function DesktopMonthSection({ state, dispatch }) {
 }
 
 function DesktopMonthGrid({ state, dispatch }) {
-  const { currentYear, currentMonth, events, tasks, categories, selectedDay } = state;
+  const { currentYear, currentMonth, tasks, categories, selectedDay } = state;
+  const events = allEvents(state);
   const dim = daysInMonth(currentYear, currentMonth);
   const offset = firstDayOffset(currentYear, currentMonth);
   const today = todayStr();
@@ -3928,7 +3993,8 @@ function DesktopDayRail({ state, dispatch }) {
   const mmdd = `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   const nameDay = NAME_DAYS[mmdd];
 
-  const dayEvents = state.events.filter(e =>
+  const everyEvent = allEvents(state);
+  const dayEvents = everyEvent.filter(e =>
     (e.type !== 'birthday' && e.date === dateStr) ||
     (e.type === 'birthday' && e.date.slice(5) === mmdd)
   );
@@ -3942,7 +4008,7 @@ function DesktopDayRail({ state, dispatch }) {
     future.setDate(future.getDate() + i);
     const fStr = fmtDate(future.getFullYear(), future.getMonth(), future.getDate());
     const fMmdd = `${String(future.getMonth()+1).padStart(2,'0')}-${String(future.getDate()).padStart(2,'0')}`;
-    const fEvents = state.events.filter(e =>
+    const fEvents = everyEvent.filter(e =>
       (e.type !== 'birthday' && e.date === fStr) ||
       (e.type === 'birthday' && e.date.slice(5) === fMmdd)
     );
@@ -4198,7 +4264,11 @@ function UpcomingRow({ entry, categories, dispatch, baseDate }) {
 
   const onClick = () => {
     if (kind === 'event') {
-      dispatch({ type: 'OPEN_MODAL', modal: { type: 'editEvent', data: item } });
+      if (item._derived) {
+        dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } });
+      } else {
+        dispatch({ type: 'OPEN_MODAL', modal: { type: 'editEvent', data: item } });
+      }
     } else {
       dispatch({ type: 'OPEN_MODAL', modal: { type: 'editTask', data: item } });
     }
