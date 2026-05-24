@@ -41,9 +41,11 @@ const CATEGORIES_DEFAULT = [
 
 const EVENT_TYPES = {
   appointment: { label: 'Schůzka', color: '#4A506D' },
-  birthday: { label: 'Narozeniny', color: '#D9A335' },
-  tick: { label: 'Klíště', color: '#C44A30' },
+  birthday: { label: 'Narozeniny / svátek', color: '#D9A335' },
+  other: { label: 'Ostatní', color: '#C44A30' },
 };
+
+const EVENT_SUBTYPES_DEFAULT = ['Klíště'];
 
 // ============ DATA MODEL & REDUCER ============
 
@@ -57,6 +59,8 @@ function loadInitialState() {
     categories: CATEGORIES_DEFAULT,
     events: [],
     tasks: [],
+    notes: {},
+    eventSubtypes: EVENT_SUBTYPES_DEFAULT,
     selectedDay: null,
     activeCategoryTab: 'prace',
     modal: null,
@@ -65,6 +69,12 @@ function loadInitialState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
     const stored = JSON.parse(raw);
+    // Migrace: 'tick' -> 'other' s customLabel 'Klíště'
+    if (Array.isArray(stored.events)) {
+      stored.events = stored.events.map(e =>
+        e.type === 'tick' ? { ...e, type: 'other', customLabel: e.customLabel || 'Klíště' } : e
+      );
+    }
     return { ...defaults, ...stored, modal: null, selectedDay: null };
   } catch {
     return defaults;
@@ -115,6 +125,18 @@ function reducer(state, action) {
       return { ...state, tasks: state.tasks.map(t => t.id === action.id ? { ...t, completed: !t.completed } : t) };
     case 'UPDATE_CATEGORY':
       return { ...state, categories: state.categories.map(c => c.id === action.category.id ? action.category : c) };
+    case 'SET_NOTE': {
+      const notes = { ...(state.notes || {}) };
+      if (action.text && action.text.trim()) notes[action.day] = action.text;
+      else delete notes[action.day];
+      return { ...state, notes };
+    }
+    case 'ADD_EVENT_SUBTYPE': {
+      const list = state.eventSubtypes || [];
+      const v = (action.label || '').trim();
+      if (!v || list.includes(v)) return state;
+      return { ...state, eventSubtypes: [...list, v] };
+    }
     default:
       return state;
   }
@@ -752,7 +774,7 @@ function EmptyDay({ onAdd }) {
 
 function EventCard({ event, dispatch }) {
   const config = EVENT_TYPES[event.type];
-  const Icon = event.type === 'birthday' ? Cake : event.type === 'tick' ? Bug : Bell;
+  const Icon = event.type === 'birthday' ? Cake : event.type === 'other' ? Bug : Bell;
 
   return (
     <div
@@ -800,7 +822,7 @@ function EventCard({ event, dispatch }) {
             fontWeight: 600,
             marginTop: '3px',
           }}>
-            {config.label}
+            {event.type === 'other' && event.customLabel ? event.customLabel : config.label}
             {event.time && <span style={{ color: TOKENS.textMuted, marginLeft: '8px' }}>{event.time}</span>}
           </div>
           {event.location && (
@@ -815,16 +837,6 @@ function EventCard({ event, dispatch }) {
             }}>
               <MapPin size={11} strokeWidth={1.75} />
               {event.location}
-            </div>
-          )}
-          {event.bodyLocation && (
-            <div style={{
-              marginTop: '4px',
-              fontSize: '12px',
-              color: TOKENS.textSecondary,
-              fontFamily: FONTS.body,
-            }}>
-              Místo: {event.bodyLocation}
             </div>
           )}
         </div>
@@ -1118,8 +1130,8 @@ function FAB({ dispatch }) {
   const opts = [
     { label: 'Úkol', color: TOKENS.text, type: 'newTask' },
     { label: 'Schůzka', color: EVENT_TYPES.appointment.color, type: 'newEvent', subtype: 'appointment' },
-    { label: 'Narozeniny', color: EVENT_TYPES.birthday.color, type: 'newEvent', subtype: 'birthday' },
-    { label: 'Klíště', color: EVENT_TYPES.tick.color, type: 'newEvent', subtype: 'tick' },
+    { label: 'Narozeniny / svátek', color: EVENT_TYPES.birthday.color, type: 'newEvent', subtype: 'birthday' },
+    { label: 'Ostatní', color: EVENT_TYPES.other.color, type: 'newEvent', subtype: 'other' },
   ];
 
   return (
@@ -1308,12 +1320,13 @@ function Modal({ state, dispatch }) {
           </button>
         </div>
         <div style={{ padding: '18px 20px 28px' }}>
-          {modal.type === 'newTask' && <TaskForm state={state} dispatch={dispatch} onClose={close} />}
+          {modal.type === 'newTask' && <TaskForm state={state} dispatch={dispatch} onClose={close} initial={modal.data} />}
           {modal.type === 'editTask' && <TaskForm state={state} dispatch={dispatch} onClose={close} task={modal.data} />}
-          {modal.type === 'newEvent' && <EventForm state={state} dispatch={dispatch} onClose={close} initialType={modal.data?.eventType} initialDate={modal.data?.date} />}
+          {modal.type === 'newEvent' && <EventForm state={state} dispatch={dispatch} onClose={close} initialType={modal.data?.eventType || modal.data?.type} initialDate={modal.data?.date} />}
           {modal.type === 'editEvent' && <EventForm state={state} dispatch={dispatch} onClose={close} event={modal.data} />}
           {modal.type === 'editCategory' && <CategoryForm state={state} dispatch={dispatch} onClose={close} category={modal.data} />}
           {modal.type === 'settings' && <SettingsForm state={state} dispatch={dispatch} onClose={close} />}
+          {modal.type === 'dayDetail' && <DayDetailModal state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
         </div>
       </div>
       <style>{`
@@ -1327,6 +1340,10 @@ function Modal({ state, dispatch }) {
 }
 
 function modalTitle(modal) {
+  if (modal.type === 'dayDetail' && modal.data?.day) {
+    const { y, m, d } = parseDate(modal.data.day);
+    return `${d}. ${MONTHS_LOWER[m]} ${y}`;
+  }
   return {
     newTask: 'Nový úkol',
     editTask: 'Upravit úkol',
@@ -1352,10 +1369,10 @@ const inputStyle = {
   boxSizing: 'border-box',
 };
 
-function TaskForm({ state, dispatch, onClose, task }) {
+function TaskForm({ state, dispatch, onClose, task, initial }) {
   const [title, setTitle] = useState(task?.title || '');
-  const [categoryId, setCategoryId] = useState(task?.categoryId || state.activeCategoryTab || state.categories[0].id);
-  const [scheduledDate, setScheduledDate] = useState(task?.scheduledDate || '');
+  const [categoryId, setCategoryId] = useState(task?.categoryId || initial?.categoryId || state.activeCategoryTab || state.categories[0].id);
+  const [scheduledDate, setScheduledDate] = useState(task?.scheduledDate || initial?.scheduledDate || '');
   const [time, setTime] = useState(task?.time || '');
   const [notification, setNotification] = useState(task?.notification || 'none');
 
@@ -1459,7 +1476,7 @@ function TaskForm({ state, dispatch, onClose, task }) {
               padding: '12px 14px',
               borderRadius: '10px',
               background: TOKENS.bgSoft,
-              color: EVENT_TYPES.tick.color,
+              color: EVENT_TYPES.other.color,
               border: `1px solid ${TOKENS.border}`,
               cursor: 'pointer',
             }}
@@ -1496,11 +1513,14 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
   const [time, setTime] = useState(event?.time || '');
   const [person, setPerson] = useState(event?.person || '');
   const [location, setLocation] = useState(event?.location || '');
-  const [bodyLocation, setBodyLocation] = useState(event?.bodyLocation || '');
+  const [customLabel, setCustomLabel] = useState(event?.customLabel || '');
   const [notification, setNotification] = useState(event?.notification || 'none');
+
+  const subtypes = state?.eventSubtypes || EVENT_SUBTYPES_DEFAULT;
 
   const save = () => {
     if (!person.trim()) return;
+    const cl = type === 'other' ? customLabel.trim() : '';
     const data = {
       id: event?.id || uid(),
       type,
@@ -1508,9 +1528,12 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
       time: type === 'appointment' && time ? time : null,
       person: person.trim(),
       location: type === 'appointment' ? (location.trim() || null) : null,
-      bodyLocation: type === 'tick' ? (bodyLocation.trim() || null) : null,
+      customLabel: cl || null,
       notification: notification === 'none' ? null : notification,
     };
+    if (type === 'other' && cl) {
+      dispatch({ type: 'ADD_EVENT_SUBTYPE', label: cl });
+    }
     dispatch({ type: event ? 'UPDATE_EVENT' : 'ADD_EVENT', event: data });
     onClose();
   };
@@ -1563,12 +1586,27 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
         </div>
       </Field>
 
-      <Field label={type === 'tick' ? 'Postižená osoba' : 'Jméno / co'}>
+      {type === 'other' && (
+        <Field label="Název (např. Klíště)">
+          <input
+            list="event-subtypes"
+            value={customLabel}
+            onChange={(e) => setCustomLabel(e.target.value)}
+            placeholder="vlastní název události"
+            style={inputStyle}
+          />
+          <datalist id="event-subtypes">
+            {subtypes.map(s => <option key={s} value={s} />)}
+          </datalist>
+        </Field>
+      )}
+
+      <Field label={type === 'other' ? 'Koho se týká' : 'Jméno / co'}>
         <input
           autoFocus
           value={person}
           onChange={(e) => setPerson(e.target.value)}
-          placeholder={type === 'birthday' ? 'Jméno oslavence' : type === 'tick' ? 'Jméno osoby' : 'Jméno nebo název'}
+          placeholder={type === 'birthday' ? 'Jméno oslavence' : type === 'other' ? 'Jméno osoby' : 'Jméno nebo název'}
           style={inputStyle}
         />
       </Field>
@@ -1605,17 +1643,6 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
         </Field>
       )}
 
-      {type === 'tick' && (
-        <Field label="Místo na těle">
-          <input
-            value={bodyLocation}
-            onChange={(e) => setBodyLocation(e.target.value)}
-            placeholder="např. levá lýtka"
-            style={inputStyle}
-          />
-        </Field>
-      )}
-
       <Field label="Upozornění">
         <NotificationPicker value={notification} onChange={setNotification} />
       </Field>
@@ -1642,7 +1669,7 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
               padding: '12px 14px',
               borderRadius: '10px',
               background: TOKENS.bgSoft,
-              color: EVENT_TYPES.tick.color,
+              color: EVENT_TYPES.other.color,
               border: `1px solid ${TOKENS.border}`,
               cursor: 'pointer',
             }}
@@ -1667,6 +1694,147 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
           }}
         >
           {event ? 'Uložit' : 'Přidat'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DayDetailModal({ state, dispatch, onClose, day }) {
+  const { y, m, d } = parseDate(day);
+  const dateObj = new Date(y, m, d);
+  const mmdd = day.slice(5);
+  const events = state.events.filter(e =>
+    (e.type !== 'birthday' && e.date === day) ||
+    (e.type === 'birthday' && e.date.slice(5) === mmdd)
+  );
+  const tasks = state.tasks.filter(t => t.scheduledDate === day);
+  const note = (state.notes && state.notes[day]) || '';
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{
+        fontFamily: FONTS.body,
+        fontSize: '13px',
+        color: TOKENS.textSecondary,
+        marginTop: '-4px',
+      }}>
+        {DAYS_FULL[dateObj.getDay()]}
+      </div>
+
+      <div>
+        <div style={{
+          fontFamily: FONTS.mono,
+          fontSize: '10px',
+          letterSpacing: '0.14em',
+          color: TOKENS.textMuted,
+          fontWeight: 700,
+          marginBottom: '8px',
+        }}>UDÁLOSTI ({events.length})</div>
+        {events.length === 0 && (
+          <div style={{
+            padding: '12px',
+            fontFamily: FONTS.body,
+            fontSize: '13px',
+            color: TOKENS.textMuted,
+            background: TOKENS.bgSoft,
+            borderRadius: '10px',
+          }}>Žádné události.</div>
+        )}
+        {events.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {events.map(e => <EventCard key={e.id} event={e} dispatch={dispatch} />)}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div style={{
+          fontFamily: FONTS.mono,
+          fontSize: '10px',
+          letterSpacing: '0.14em',
+          color: TOKENS.textMuted,
+          fontWeight: 700,
+          marginBottom: '8px',
+        }}>ÚKOLY ({tasks.length})</div>
+        {tasks.length === 0 && (
+          <div style={{
+            padding: '12px',
+            fontFamily: FONTS.body,
+            fontSize: '13px',
+            color: TOKENS.textMuted,
+            background: TOKENS.bgSoft,
+            borderRadius: '10px',
+          }}>Žádné úkoly.</div>
+        )}
+        {tasks.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {tasks.map(t => <TaskCard key={t.id} task={t} categories={state.categories} dispatch={dispatch} />)}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div style={{
+          fontFamily: FONTS.mono,
+          fontSize: '10px',
+          letterSpacing: '0.14em',
+          color: TOKENS.textMuted,
+          fontWeight: 700,
+          marginBottom: '6px',
+        }}>POZNÁMKA</div>
+        <textarea
+          value={note}
+          onChange={(e) => dispatch({ type: 'SET_NOTE', day, text: e.target.value })}
+          placeholder="napiš poznámku k tomuto dni…"
+          rows={3}
+          style={{ ...inputStyle, fontFamily: FONTS.hand, fontSize: '18px', color: TOKENS.accentStrong, resize: 'vertical' }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+        <button
+          onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'newTask', data: { scheduledDate: day } } })}
+          style={{
+            flex: 1,
+            padding: '12px',
+            borderRadius: '10px',
+            background: TOKENS.bgSoft,
+            color: TOKENS.text,
+            border: `1px solid ${TOKENS.border}`,
+            fontFamily: FONTS.body,
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+          }}
+        >
+          <Plus size={14} /> Úkol
+        </button>
+        <button
+          onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'newEvent', data: { date: day } } })}
+          style={{
+            flex: 1,
+            padding: '12px',
+            borderRadius: '10px',
+            background: TOKENS.accent,
+            color: '#fff',
+            border: 'none',
+            fontFamily: FONTS.body,
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: '0 4px 12px rgba(122,24,64,.22)',
+          }}
+        >
+          <Plus size={14} /> Událost
         </button>
       </div>
     </div>
@@ -2359,39 +2527,61 @@ function DesktopSidebar({ state, dispatch }) {
         </div>
       </div>
 
-      {/* HandNote */}
+      {/* HandNote — editable per day */}
+      <EditableNote state={state} dispatch={dispatch} />
+    </div>
+  );
+}
+
+function EditableNote({ state, dispatch }) {
+  const noteDay = state.selectedDay || todayStr();
+  const value = (state.notes && state.notes[noteDay]) || '';
+  const { y, m, d } = parseDate(noteDay);
+  const isToday = noteDay === todayStr();
+  const label = isToday ? 'POZNÁMKA · DNES' : `POZNÁMKA · ${d}. ${MONTHS_LOWER[m].toUpperCase()}`;
+
+  return (
+    <div style={{
+      marginTop: 'auto',
+      position: 'relative',
+      padding: '14px 14px 12px 14px',
+      border: `1px dashed ${TOKENS.accent}40`,
+      borderRadius: '10px',
+      background: `${TOKENS.accent}06`,
+    }}>
       <div style={{
-        marginTop: 'auto',
-        position: 'relative',
-        padding: '14px 14px 14px 14px',
-        border: `1px dashed ${TOKENS.accent}40`,
-        borderRadius: '10px',
-        background: `${TOKENS.accent}06`,
+        position: 'absolute',
+        top: '-9px',
+        left: '12px',
+        background: TOKENS.bg,
+        padding: '0 6px',
+        fontFamily: FONTS.mono,
+        fontSize: '9px',
+        letterSpacing: '0.14em',
+        color: TOKENS.accent,
+        fontWeight: 700,
       }}>
-        <div style={{
-          position: 'absolute',
-          top: '-9px',
-          left: '12px',
-          background: TOKENS.bg,
-          padding: '0 6px',
-          fontFamily: FONTS.mono,
-          fontSize: '9px',
-          letterSpacing: '0.14em',
-          color: TOKENS.accent,
-          fontWeight: 700,
-        }}>
-          POZNÁMKA
-        </div>
-        <div style={{
+        {label}
+      </div>
+      <textarea
+        value={value}
+        onChange={(e) => dispatch({ type: 'SET_NOTE', day: noteDay, text: e.target.value })}
+        placeholder="napiš poznámku k tomuto dni…"
+        rows={3}
+        style={{
+          width: '100%',
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          resize: 'vertical',
           fontFamily: FONTS.hand,
           fontSize: '18px',
           fontWeight: 600,
           color: TOKENS.accentStrong,
           lineHeight: 1.2,
-        }}>
-          Před spaním zalít kytky a sepsat seznam na pondělí.
-        </div>
-      </div>
+          minHeight: '50px',
+        }}
+      />
     </div>
   );
 }
@@ -2425,7 +2615,14 @@ function MiniMonth({ state, dispatch }) {
     cells.push(
       <button
         key={d}
-        onClick={() => dispatch({ type: 'SELECT_DAY', day: dateStr })}
+        onClick={() => {
+          dispatch({ type: 'SELECT_DAY', day: dateStr });
+          if (state.view === 'todo') {
+            dispatch({ type: 'OPEN_MODAL', modal: { type: 'newTask', data: { scheduledDate: dateStr } } });
+          } else {
+            dispatch({ type: 'OPEN_MODAL', modal: { type: 'dayDetail', data: { day: dateStr } } });
+          }
+        }}
         style={{
           aspectRatio: '1',
           padding: 0,
@@ -3004,7 +3201,10 @@ function DesktopMonthGrid({ state, dispatch }) {
     cells.push(
       <button
         key={d}
-        onClick={() => dispatch({ type: 'SELECT_DAY', day: dateStr })}
+        onClick={() => {
+          dispatch({ type: 'SELECT_DAY', day: dateStr });
+          dispatch({ type: 'OPEN_MODAL', modal: { type: 'dayDetail', data: { day: dateStr } } });
+        }}
         style={{
           background: isWeekend ? TOKENS.bgSoft : TOKENS.bg,
           padding: '8px',
@@ -3256,18 +3456,44 @@ function DesktopTasksView({ state, dispatch }) {
         </button>
       </div>
 
-      {/* Kanban: 4 columns by category */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '14px',
-        flex: 1,
-        minHeight: 0,
-      }}>
-        {state.categories.map(c => (
-          <KanbanColumn key={c.id} category={c} state={state} dispatch={dispatch} />
-        ))}
-      </div>
+      {/* Kanban: dynamic columns — show only categories with tasks */}
+      {(() => {
+        const activeCategories = state.categories.filter(c =>
+          state.tasks.some(t => t.categoryId === c.id)
+        );
+        if (activeCategories.length === 0) {
+          return (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '60px 24px',
+              border: `1px dashed ${TOKENS.border}`,
+              borderRadius: '14px',
+              color: TOKENS.textMuted,
+              fontFamily: FONTS.body,
+              fontSize: '14px',
+              textAlign: 'center',
+            }}>
+              Zatím žádné úkoly. Přidej úkol vlevo nebo přes „Přidat úkol" nahoře.
+            </div>
+          );
+        }
+        return (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${activeCategories.length}, minmax(0, 1fr))`,
+            gap: '14px',
+            flex: 1,
+            minHeight: 0,
+          }}>
+            {activeCategories.map(c => (
+              <KanbanColumn key={c.id} category={c} state={state} dispatch={dispatch} />
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -3293,20 +3519,34 @@ function KanbanColumn({ category, state, dispatch }) {
         padding: '12px 14px',
         borderBottom: `1px solid ${TOKENS.borderSoft}`,
       }}>
-        <div style={{
-          width: '8px',
-          height: '8px',
-          borderRadius: '50%',
-          background: category.color,
-        }} />
-        <div style={{
-          fontFamily: FONTS.body,
-          fontSize: '13px',
-          fontWeight: 700,
-          color: TOKENS.text,
-        }}>
-          {category.name}
-        </div>
+        <button
+          onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'editCategory', data: category } })}
+          title="Přejmenovat kategorii"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'none',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+          }}
+        >
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            background: category.color,
+          }} />
+          <div style={{
+            fontFamily: FONTS.body,
+            fontSize: '13px',
+            fontWeight: 700,
+            color: TOKENS.text,
+          }}>
+            {category.name}
+          </div>
+        </button>
         <div style={{
           fontFamily: FONTS.mono,
           fontSize: '10.5px',
@@ -3507,7 +3747,35 @@ function DesktopDayRail({ state, dispatch }) {
 
       {/* Události */}
       <div>
-        <SectionHeader marker="bar" label="Události" count={dayEvents.length} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+          <SectionHeader marker="bar" label="Události" count={dayEvents.length} />
+        </div>
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap', marginBottom: '8px' }}>
+          {Object.entries(EVENT_TYPES).map(([id, cfg]) => (
+            <button
+              key={id}
+              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'newEvent', data: { date: dateStr, type: id } } })}
+              title={`Přidat: ${cfg.label}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '5px 9px',
+                borderRadius: '999px',
+                background: `${cfg.color}15`,
+                border: `1px solid ${cfg.color}40`,
+                color: cfg.color,
+                fontFamily: FONTS.body,
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              <Plus size={10} strokeWidth={2.5} />
+              {cfg.label}
+            </button>
+          ))}
+        </div>
         {dayEvents.length === 0 ? (
           <EmptyMini text="Žádné události." />
         ) : (
@@ -3520,7 +3788,32 @@ function DesktopDayRail({ state, dispatch }) {
       {/* Úkoly — pouze v Kalendář pohledu */}
       {state.view === 'calendar' && (
         <div>
-          <SectionHeader marker="dot" label="Úkoly" count={dayTasks.filter(t => !t.completed).length} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <SectionHeader marker="dot" label="Úkoly" count={dayTasks.filter(t => !t.completed).length} />
+            <div style={{ flex: 1 }} />
+            <button
+              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'newTask', data: { scheduledDate: dateStr } } })}
+              title="Přidat úkol na tento den"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                padding: '4px 10px',
+                borderRadius: '999px',
+                background: TOKENS.accent,
+                color: '#fff',
+                border: 'none',
+                fontFamily: FONTS.body,
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(122,24,64,.22)',
+              }}
+            >
+              <Plus size={10} strokeWidth={2.5} />
+              Úkol
+            </button>
+          </div>
           {dayTasks.length === 0 ? (
             <EmptyMini text="Žádné úkoly na tento den." />
           ) : (
