@@ -61,6 +61,7 @@ function loadInitialState() {
     tasks: [],
     notes: {},
     eventSubtypes: EVENT_SUBTYPES_DEFAULT,
+    people: [],
     selectedDay: null,
     activeCategoryTab: 'prace',
     modal: null,
@@ -137,6 +138,12 @@ function reducer(state, action) {
       if (!v || list.includes(v)) return state;
       return { ...state, eventSubtypes: [...list, v] };
     }
+    case 'ADD_PERSON':
+      return { ...state, people: [...(state.people || []), action.person] };
+    case 'UPDATE_PERSON':
+      return { ...state, people: (state.people || []).map(p => p.id === action.person.id ? action.person : p) };
+    case 'DELETE_PERSON':
+      return { ...state, people: (state.people || []).filter(p => p.id !== action.id) };
     default:
       return state;
   }
@@ -150,14 +157,58 @@ const DAYS_FULL = ['neděle','pondělí','úterý','středa','čtvrtek','pátek'
 const DAYS_SHORT = ['Po','Út','St','Čt','Pá','So','Ne'];
 const DAYS_SINGLE = ['P','Ú','S','Č','P','S','N'];
 
-// Český svátkový kalendář (zjednodušený, vybrané dny)
+// Český svátkový kalendář (občanský, pro každý den v roce)
 const NAME_DAYS = {
-  '05-22': 'Emil', '05-23': 'Vladimír', '05-24': 'Jana', '05-25': 'Viola',
-  '05-26': 'Filip', '05-27': 'Valdemar', '05-28': 'Vilém', '05-29': 'Maxmilián',
-  '05-30': 'Ferdinand', '05-31': 'Kamila',
-  '06-01': 'Laura', '06-02': 'Jarmil', '06-03': 'Tamara',
-  '01-01': 'Nový rok', '12-24': 'Adam a Eva', '12-25': 'Boží hod',
+  '01-01':'Nový rok','01-02':'Karina','01-03':'Radmila','01-04':'Diana','01-05':'Dalimil','01-06':'Tři králové','01-07':'Vilma','01-08':'Čestmír','01-09':'Vladan','01-10':'Břetislav',
+  '01-11':'Bohdana','01-12':'Pravoslav','01-13':'Edita','01-14':'Radovan','01-15':'Alice','01-16':'Ctirad','01-17':'Drahoslav','01-18':'Vladislav','01-19':'Doubravka','01-20':'Ilona',
+  '01-21':'Běla','01-22':'Slavomír','01-23':'Zdeněk','01-24':'Milena','01-25':'Miloš','01-26':'Zora','01-27':'Ingrid','01-28':'Otýlie','01-29':'Zdislava','01-30':'Robin','01-31':'Marika',
+  '02-01':'Hynek','02-02':'Nela','02-03':'Blažej','02-04':'Jarmila','02-05':'Dobromila','02-06':'Vanda','02-07':'Veronika','02-08':'Milada','02-09':'Apolena','02-10':'Mojmír',
+  '02-11':'Božena','02-12':'Slavěna','02-13':'Věnceslav','02-14':'Valentýn','02-15':'Jiřina','02-16':'Ljuba','02-17':'Miloslava','02-18':'Gizela','02-19':'Patrik','02-20':'Oldřich',
+  '02-21':'Lenka','02-22':'Petr','02-23':'Svatopluk','02-24':'Matěj','02-25':'Liliana','02-26':'Dorota','02-27':'Alexandr','02-28':'Lumír','02-29':'Horymír',
+  '03-01':'Bedřich','03-02':'Anežka','03-03':'Kamil','03-04':'Stela','03-05':'Kazimír','03-06':'Miroslav','03-07':'Tomáš','03-08':'Gabriela','03-09':'Františka','03-10':'Viktorie',
+  '03-11':'Anděla','03-12':'Řehoř','03-13':'Růžena','03-14':'Rút a Matylda','03-15':'Ida','03-16':'Elena, Herbert','03-17':'Vlastimil','03-18':'Eduard','03-19':'Josef','03-20':'Světlana',
+  '03-21':'Radek','03-22':'Leona','03-23':'Ivona','03-24':'Gabriel','03-25':'Marián','03-26':'Emanuel','03-27':'Dita','03-28':'Soňa','03-29':'Taťána','03-30':'Arnošt','03-31':'Kvido',
+  '04-01':'Hugo','04-02':'Erika','04-03':'Richard','04-04':'Ivana','04-05':'Miroslava','04-06':'Vendula','04-07':'Heřman, Hermína','04-08':'Ema','04-09':'Dušan','04-10':'Darja',
+  '04-11':'Izabela','04-12':'Julius','04-13':'Aleš','04-14':'Vincenc','04-15':'Anastázie','04-16':'Irena','04-17':'Rudolf','04-18':'Valérie','04-19':'Rostislav','04-20':'Marcela',
+  '04-21':'Alexandra','04-22':'Evženie','04-23':'Vojtěch','04-24':'Jiří','04-25':'Marek','04-26':'Oto','04-27':'Jaroslav','04-28':'Vlastislav','04-29':'Robert','04-30':'Blahoslav',
+  '05-01':'Svátek práce','05-02':'Zikmund','05-03':'Alexej','05-04':'Květoslav','05-05':'Klaudie','05-06':'Radoslav','05-07':'Stanislav','05-08':'Den vítězství','05-09':'Ctibor','05-10':'Blažena',
+  '05-11':'Svatava','05-12':'Pankrác','05-13':'Servác','05-14':'Bonifác','05-15':'Žofie','05-16':'Přemysl','05-17':'Aneta','05-18':'Nataša','05-19':'Ivo','05-20':'Zbyšek',
+  '05-21':'Monika','05-22':'Emil','05-23':'Vladimír','05-24':'Jana','05-25':'Viola','05-26':'Filip','05-27':'Valdemar','05-28':'Vilém','05-29':'Maxmilián','05-30':'Ferdinand','05-31':'Kamila',
+  '06-01':'Laura','06-02':'Jarmil','06-03':'Tamara','06-04':'Dalibor','06-05':'Dobroslav','06-06':'Norbert','06-07':'Iveta a Slavoj','06-08':'Medard','06-09':'Stanislava','06-10':'Gita',
+  '06-11':'Bruno','06-12':'Antonie','06-13':'Antonín','06-14':'Roland','06-15':'Vít','06-16':'Zbyněk','06-17':'Adolf','06-18':'Milan','06-19':'Leoš','06-20':'Květa',
+  '06-21':'Alois','06-22':'Pavla','06-23':'Zdeňka','06-24':'Jan','06-25':'Ivan','06-26':'Adriana','06-27':'Ladislav','06-28':'Lubomír','06-29':'Petr a Pavel','06-30':'Šárka',
+  '07-01':'Jaroslava','07-02':'Patricie','07-03':'Radomír','07-04':'Prokop','07-05':'Cyril a Metoděj','07-06':'Mistr Jan Hus','07-07':'Bohuslava','07-08':'Nora','07-09':'Drahoslava','07-10':'Libuše a Amálie',
+  '07-11':'Olga','07-12':'Bořek','07-13':'Markéta','07-14':'Karolína','07-15':'Jindřich','07-16':'Luboš','07-17':'Martina','07-18':'Drahomíra','07-19':'Čeněk','07-20':'Ilja',
+  '07-21':'Vítězslav','07-22':'Magdaléna','07-23':'Libor','07-24':'Kristýna','07-25':'Jakub','07-26':'Anna','07-27':'Věroslav','07-28':'Viktor','07-29':'Marta','07-30':'Bořivoj','07-31':'Ignác',
+  '08-01':'Oskar','08-02':'Gustav','08-03':'Miluše','08-04':'Dominik','08-05':'Kristián','08-06':'Oldřiška','08-07':'Lada','08-08':'Soběslav','08-09':'Roman','08-10':'Vavřinec',
+  '08-11':'Zuzana','08-12':'Klára','08-13':'Alena','08-14':'Alan','08-15':'Hana','08-16':'Jáchym','08-17':'Petra','08-18':'Helena','08-19':'Ludvík','08-20':'Bernard',
+  '08-21':'Johana','08-22':'Bohuslav','08-23':'Sandra','08-24':'Bartoloměj','08-25':'Radim','08-26':'Luděk','08-27':'Otakar','08-28':'Augustýn','08-29':'Evelína','08-30':'Vladěna','08-31':'Pavlína',
+  '09-01':'Linda a Samuel','09-02':'Adéla','09-03':'Bronislav','09-04':'Jindřiška','09-05':'Boris','09-06':'Boleslav','09-07':'Regína','09-08':'Mariana','09-09':'Daniela','09-10':'Irma',
+  '09-11':'Denisa','09-12':'Marie','09-13':'Lubor','09-14':'Radka','09-15':'Jolana','09-16':'Ludmila','09-17':'Naděžda','09-18':'Kryštof','09-19':'Zita','09-20':'Oleg',
+  '09-21':'Matouš','09-22':'Darina','09-23':'Berta','09-24':'Jaromír','09-25':'Zlata','09-26':'Andrea','09-27':'Jonáš','09-28':'Den české státnosti','09-29':'Michal','09-30':'Jeroným',
+  '10-01':'Igor','10-02':'Olívie a Oliver','10-03':'Bohumil','10-04':'František','10-05':'Eliška','10-06':'Hanuš','10-07':'Justýna','10-08':'Věra','10-09':'Štefan a Sára','10-10':'Marina',
+  '10-11':'Andrej','10-12':'Marcel','10-13':'Renáta','10-14':'Agáta','10-15':'Tereza','10-16':'Havel','10-17':'Hedvika','10-18':'Lukáš','10-19':'Michaela','10-20':'Vendelín',
+  '10-21':'Brigita','10-22':'Sabina','10-23':'Teodor','10-24':'Nina','10-25':'Beáta','10-26':'Erik','10-27':'Šarlota a Zoe','10-28':'Vznik samostatného Československa','10-29':'Silvie','10-30':'Tadeáš','10-31':'Štěpánka',
+  '11-01':'Felix','11-02':'Památka zesnulých','11-03':'Hubert','11-04':'Karel','11-05':'Miriam','11-06':'Liběna','11-07':'Saskie','11-08':'Bohumír','11-09':'Bohdan','11-10':'Evžen',
+  '11-11':'Martin','11-12':'Benedikt','11-13':'Tibor','11-14':'Sáva','11-15':'Leopold','11-16':'Otmar','11-17':'Den boje za svobodu a demokracii','11-18':'Romana','11-19':'Alžběta','11-20':'Nikola',
+  '11-21':'Albert','11-22':'Cecílie','11-23':'Klement','11-24':'Emílie','11-25':'Kateřina','11-26':'Artur','11-27':'Xenie','11-28':'René','11-29':'Zina','11-30':'Ondřej',
+  '12-01':'Iva','12-02':'Blanka','12-03':'Svatoslav','12-04':'Barbora','12-05':'Jitka','12-06':'Mikuláš','12-07':'Ambrož a Benjamin','12-08':'Květoslava','12-09':'Vratislav','12-10':'Julie',
+  '12-11':'Dana','12-12':'Simona','12-13':'Lucie','12-14':'Lýdie','12-15':'Radana a Radan','12-16':'Albína','12-17':'Daniel','12-18':'Miloslav','12-19':'Ester','12-20':'Dagmar',
+  '12-21':'Natálie','12-22':'Šimon','12-23':'Vlasta','12-24':'Adam a Eva','12-25':'Boží hod vánoční','12-26':'Štěpán','12-27':'Žaneta','12-28':'Bohumila','12-29':'Judita','12-30':'David','12-31':'Silvestr',
 };
+
+// Inverzní lookup: jméno -> MM-DD (case insensitive, první shoda)
+function nameDayFor(name) {
+  if (!name) return null;
+  const norm = name.trim().toLowerCase();
+  if (!norm) return null;
+  for (const [mmdd, label] of Object.entries(NAME_DAYS)) {
+    // Tokenizace svátku (např. "Petr a Pavel" -> ["petr","pavel"]); přeskočíme spojku "a"
+    const tokens = label.toLowerCase().split(/[\s,]+/).filter(t => t && t !== 'a');
+    if (tokens.includes(norm)) return mmdd;
+  }
+  return null;
+}
 
 const fmtDate = (y, m, d) => `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 const parseDate = (s) => { const [y,m,d] = s.split('-').map(Number); return { y, m: m-1, d }; };
@@ -1327,6 +1378,7 @@ function Modal({ state, dispatch }) {
           {modal.type === 'editCategory' && <CategoryForm state={state} dispatch={dispatch} onClose={close} category={modal.data} />}
           {modal.type === 'settings' && <SettingsForm state={state} dispatch={dispatch} onClose={close} />}
           {modal.type === 'dayDetail' && <DayDetailModal state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
+          {modal.type === 'people' && <PeopleList state={state} dispatch={dispatch} onClose={close} />}
         </div>
       </div>
       <style>{`
@@ -1351,6 +1403,7 @@ function modalTitle(modal) {
     editEvent: 'Upravit událost',
     editCategory: 'Kategorie',
     settings: 'Nastavení',
+    people: 'Známí a svátky',
   }[modal.type] || '';
 }
 
@@ -1836,6 +1889,226 @@ function DayDetailModal({ state, dispatch, onClose, day }) {
         >
           <Plus size={14} /> Událost
         </button>
+      </div>
+    </div>
+  );
+}
+
+function PeopleList({ state, dispatch, onClose }) {
+  const [name, setName] = useState('');
+  const [birthday, setBirthday] = useState('');
+  const [customNameDay, setCustomNameDay] = useState('');
+
+  const detected = nameDayFor(name);
+  const detectedLabel = detected ? `${parseInt(detected.slice(3), 10)}. ${MONTHS_LOWER[parseInt(detected.slice(0,2), 10) - 1]}` : null;
+  const people = (state.people || []).slice().sort((a,b) => a.name.localeCompare(b.name, 'cs'));
+
+  const add = () => {
+    const n = name.trim();
+    if (!n) return;
+    const nd = customNameDay || detected || null;
+    const person = {
+      id: uid(),
+      name: n,
+      nameDay: nd, // 'MM-DD' or null
+      birthday: birthday || null, // 'YYYY-MM-DD' or null
+    };
+    dispatch({ type: 'ADD_PERSON', person });
+    setName(''); setBirthday(''); setCustomNameDay('');
+  };
+
+  const remove = (id) => {
+    dispatch({ type: 'DELETE_PERSON', id });
+  };
+
+  const updateField = (person, field, value) => {
+    dispatch({ type: 'UPDATE_PERSON', person: { ...person, [field]: value || null } });
+  };
+
+  const fmtMmdd = (mmdd) => {
+    if (!mmdd) return '—';
+    const m = parseInt(mmdd.slice(0,2), 10);
+    const d = parseInt(mmdd.slice(3), 10);
+    return `${d}. ${MONTHS_LOWER[m - 1]}`;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ fontSize: '12.5px', color: TOKENS.textSecondary, fontFamily: FONTS.body, marginTop: '-4px' }}>
+        Napiš jméno — datum svátku se doplní automaticky podle českého kalendáře. Narozeniny jsou nepovinné.
+      </div>
+
+      {/* Nový záznam */}
+      <div style={{
+        padding: '12px',
+        border: `1px solid ${TOKENS.borderSoft}`,
+        borderRadius: '10px',
+        background: TOKENS.bgSoft,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+      }}>
+        <Field label="Jméno">
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="např. Petr"
+            style={inputStyle}
+          />
+          {name.trim() && (
+            <div style={{ marginTop: '6px', fontSize: '11.5px', fontFamily: FONTS.body, color: detected ? TOKENS.accent : TOKENS.textMuted }}>
+              {detected ? `Svátek: ${detectedLabel}` : 'Svátek se nenašel — můžeš zadat datum ručně níže.'}
+            </div>
+          )}
+        </Field>
+
+        {name.trim() && !detected && (
+          <Field label="Svátek (datum, MM-DD)">
+            <input
+              type="text"
+              value={customNameDay}
+              onChange={(e) => setCustomNameDay(e.target.value)}
+              placeholder="např. 05-22"
+              style={inputStyle}
+            />
+          </Field>
+        )}
+
+        <Field label="Narozeniny (volitelné)">
+          <input
+            type="date"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
+
+        <button
+          onClick={add}
+          disabled={!name.trim()}
+          style={{
+            padding: '10px',
+            borderRadius: '10px',
+            background: name.trim() ? TOKENS.accent : TOKENS.bgSoft,
+            color: name.trim() ? '#fff' : TOKENS.textMuted,
+            border: 'none',
+            fontFamily: FONTS.body,
+            fontWeight: 600,
+            fontSize: '13px',
+            cursor: name.trim() ? 'pointer' : 'not-allowed',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '6px',
+            boxShadow: name.trim() ? '0 2px 6px rgba(122,24,64,.22)' : 'none',
+          }}
+        >
+          <Plus size={14} /> Přidat
+        </button>
+      </div>
+
+      {/* Tabulka */}
+      <div>
+        <div style={{
+          fontFamily: FONTS.mono,
+          fontSize: '10px',
+          letterSpacing: '0.14em',
+          color: TOKENS.textMuted,
+          fontWeight: 700,
+          marginBottom: '8px',
+        }}>SEZNAM ({people.length})</div>
+
+        {people.length === 0 ? (
+          <div style={{
+            padding: '20px 12px',
+            textAlign: 'center',
+            fontFamily: FONTS.body,
+            fontSize: '12.5px',
+            color: TOKENS.textMuted,
+            background: TOKENS.bgSoft,
+            borderRadius: '10px',
+          }}>
+            Zatím tu nikdo není.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1.4fr 1fr 1fr 28px',
+              gap: '8px',
+              padding: '4px 6px',
+              fontFamily: FONTS.mono,
+              fontSize: '9.5px',
+              letterSpacing: '0.12em',
+              color: TOKENS.textMuted,
+              fontWeight: 700,
+              textTransform: 'uppercase',
+            }}>
+              <div>Jméno</div>
+              <div>Svátek</div>
+              <div>Narozeniny</div>
+              <div />
+            </div>
+            {people.map(p => (
+              <div key={p.id} style={{
+                display: 'grid',
+                gridTemplateColumns: '1.4fr 1fr 1fr 28px',
+                gap: '8px',
+                alignItems: 'center',
+                padding: '6px 6px',
+                border: `1px solid ${TOKENS.borderSoft}`,
+                borderRadius: '8px',
+                background: TOKENS.bg,
+              }}>
+                <div style={{
+                  fontFamily: FONTS.body,
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  color: TOKENS.text,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>{p.name}</div>
+                <div style={{
+                  fontFamily: FONTS.body,
+                  fontSize: '12.5px',
+                  color: p.nameDay ? TOKENS.text : TOKENS.textMuted,
+                }}>{fmtMmdd(p.nameDay)}</div>
+                <input
+                  type="date"
+                  value={p.birthday || ''}
+                  onChange={(e) => updateField(p, 'birthday', e.target.value)}
+                  style={{
+                    ...inputStyle,
+                    padding: '4px 6px',
+                    fontSize: '12px',
+                    minHeight: 0,
+                  }}
+                />
+                <button
+                  onClick={() => remove(p.id)}
+                  title="Smazat"
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    padding: 0,
+                    background: 'transparent',
+                    border: `1px solid ${TOKENS.borderSoft}`,
+                    borderRadius: '6px',
+                    color: TOKENS.textSecondary,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2336,7 +2609,19 @@ function DesktopSidebar({ state, dispatch }) {
               borderTop: `1px dashed ${TOKENS.border}`,
               margin: '12px 0 10px',
             }} />
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+            <button
+              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } })}
+              title="Otevřít seznam známých a svátků"
+              style={{
+                display: 'flex',
+                alignItems: 'baseline',
+                gap: '8px',
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                cursor: 'pointer',
+              }}
+            >
               <span style={{
                 fontFamily: FONTS.mono,
                 fontSize: '9.5px',
@@ -2356,7 +2641,7 @@ function DesktopSidebar({ state, dispatch }) {
               }}>
                 {nameDay}
               </span>
-            </div>
+            </button>
           </>
         )}
       </div>
@@ -3741,7 +4026,25 @@ function DesktopDayRail({ state, dispatch }) {
           color: TOKENS.textSecondary,
         }}>
           {DAYS_FULL[new Date(y, m, d).getDay()]}
-          {nameDay && <> · svátek {nameDay}</>}
+          {nameDay && (
+            <> · <button
+              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } })}
+              title="Otevřít seznam známých a svátků"
+              style={{
+                background: 'none',
+                border: 'none',
+                padding: 0,
+                color: TOKENS.accent,
+                fontFamily: FONTS.body,
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textDecorationStyle: 'dotted',
+                textUnderlineOffset: '2px',
+              }}
+            >svátek {nameDay}</button></>
+          )}
         </div>
       </div>
 
