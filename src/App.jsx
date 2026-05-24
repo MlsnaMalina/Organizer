@@ -495,10 +495,7 @@ function CalendarGrid({ state, dispatch }) {
   const getEventsForDay = (day) => {
     const dateStr = fmtDate(currentYear, currentMonth, day);
     const mmdd = `${String(currentMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    return events.filter(e =>
-      (e.type !== 'birthday' && e.date === dateStr) ||
-      (e.type === 'birthday' && e.date.slice(5) === mmdd)
-    );
+    return eventsForDay(events, dateStr);
   };
 
   const cells = [];
@@ -509,7 +506,7 @@ function CalendarGrid({ state, dispatch }) {
   for (let d = 1; d <= dim; d++) {
     const dateStr = fmtDate(currentYear, currentMonth, d);
     const dayEvents = getEventsForDay(d);
-    const dayTasks = tasks.filter(t => t.scheduledDate === dateStr);
+    const dayTasks = tasksForDay(tasks, dateStr);
     const isToday = dateStr === today;
     const isSelected = selectedDay === dateStr;
     const dow = new Date(currentYear, currentMonth, d).getDay();
@@ -626,11 +623,8 @@ function DayDetail({ state, dispatch }) {
   if (!state.selectedDay) return null;
 
   const { y, m, d } = parseDate(state.selectedDay);
-  const dayEvents = allEvents(state).filter(e =>
-    (e.type !== 'birthday' && e.date === state.selectedDay) ||
-    (e.type === 'birthday' && e.date.slice(5) === `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`)
-  );
-  const dayTasks = state.tasks.filter(t => t.scheduledDate === state.selectedDay);
+  const dayEvents = eventsForDay(allEvents(state), state.selectedDay);
+  const dayTasks = tasksForDay(state.tasks, state.selectedDay);
   const isToday = state.selectedDay === todayStr();
   const dayName = DAYS_FULL[new Date(y, m, d).getDay()];
   const mmdd = `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -881,6 +875,15 @@ function EventCard({ event, dispatch }) {
           }}>
             {event.type === 'other' && event.customLabel ? event.customLabel : config.label}
             {event.time && <span style={{ color: TOKENS.textMuted, marginLeft: '8px' }}>{event.time}</span>}
+            {event.endDate && event.endDate > event.date && (() => {
+              const a = parseDate(event.date);
+              const b = parseDate(event.endDate);
+              return (
+                <span style={{ color: TOKENS.textMuted, marginLeft: '8px', textTransform: 'none' }}>
+                  {a.d}.{a.m+1}. – {b.d}.{b.m+1}.
+                </span>
+              );
+            })()}
           </div>
           {event.location && (
             <div style={{
@@ -1569,6 +1572,7 @@ function TaskForm({ state, dispatch, onClose, task, initial }) {
 function EventForm({ state, dispatch, onClose, event, initialType, initialDate }) {
   const [type, setType] = useState(event?.type || initialType || 'appointment');
   const [date, setDate] = useState(event?.date || initialDate || todayStr());
+  const [endDate, setEndDate] = useState(event?.endDate || '');
   const [time, setTime] = useState(event?.time || '');
   const [person, setPerson] = useState(event?.person || '');
   const [location, setLocation] = useState(event?.location || '');
@@ -1576,14 +1580,18 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
   const [notification, setNotification] = useState(event?.notification || 'none');
 
   const subtypes = state?.eventSubtypes || EVENT_SUBTYPES_DEFAULT;
+  // Datum-od-do dává smysl pro Schůzku (krátká cesta) i Ostatní (prázdniny apod.), ne pro narozeniny.
+  const supportsRange = type !== 'birthday';
 
   const save = () => {
     if (!person.trim()) return;
     const cl = type === 'other' ? customLabel.trim() : '';
+    const cleanEnd = supportsRange && endDate && endDate > date ? endDate : null;
     const data = {
       id: event?.id || uid(),
       type,
       date,
+      endDate: cleanEnd,
       time: type === 'appointment' && time ? time : null,
       person: person.trim(),
       location: type === 'appointment' ? (location.trim() || null) : null,
@@ -1671,11 +1679,14 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
       </Field>
 
       <div style={type === 'appointment' ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } : {}}>
-        <Field label="Datum">
+        <Field label={supportsRange ? 'Datum od' : 'Datum'}>
           <input
             type="date"
             value={date}
-            onChange={(e) => setDate(e.target.value)}
+            onChange={(e) => {
+              setDate(e.target.value);
+              if (endDate && e.target.value > endDate) setEndDate('');
+            }}
             style={inputStyle}
           />
         </Field>
@@ -1690,6 +1701,18 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
           </Field>
         )}
       </div>
+
+      {supportsRange && (
+        <Field label="Datum do (volitelné — pro vícedenní událost)">
+          <input
+            type="date"
+            value={endDate}
+            min={date}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={inputStyle}
+          />
+        </Field>
+      )}
 
       {type === 'appointment' && (
         <Field label="Místo">
@@ -1763,11 +1786,8 @@ function DayDetailModal({ state, dispatch, onClose, day }) {
   const { y, m, d } = parseDate(day);
   const dateObj = new Date(y, m, d);
   const mmdd = day.slice(5);
-  const events = allEvents(state).filter(e =>
-    (e.type !== 'birthday' && e.date === day) ||
-    (e.type === 'birthday' && e.date.slice(5) === mmdd)
-  );
-  const tasks = state.tasks.filter(t => t.scheduledDate === day);
+  const events = eventsForDay(allEvents(state), day);
+  const tasks = tasksForDay(state.tasks, day);
   const note = (state.notes && state.notes[day]) || '';
 
   return (
@@ -1926,6 +1946,29 @@ function getPeopleBirthdayEvents(people) {
 // Sjednocený seznam událostí (uživatelské + odvozené z narozenin lidí)
 function allEvents(state) {
   return [...(state.events || []), ...getPeopleBirthdayEvents(state.people)];
+}
+
+// Úkoly pro daný den: s daným scheduledDate; navíc pokud je dateStr DNES, vrátí i úkoly bez data.
+function tasksForDay(tasks, dateStr) {
+  const isToday = dateStr === todayStr();
+  return (tasks || []).filter(t =>
+    t.scheduledDate === dateStr || (isToday && !t.scheduledDate)
+  );
+}
+
+// Události pro daný den — pokrývá: jednodenní (date === dateStr),
+// vícedenní (date <= dateStr <= endDate), narozeniny (opakující se podle MM-DD).
+function eventMatchesDay(e, dateStr) {
+  if (!e || !e.date) return false;
+  const mmdd = dateStr.slice(5);
+  if (e.type === 'birthday') return e.date.slice(5) === mmdd;
+  if (e.endDate && e.endDate >= e.date) {
+    return dateStr >= e.date && dateStr <= e.endDate;
+  }
+  return e.date === dateStr;
+}
+function eventsForDay(eventsList, dateStr) {
+  return (eventsList || []).filter(e => eventMatchesDay(e, dateStr));
 }
 
 // Parsuje uživatelský zápis "DD.MM" / "D.M" / "DD.MM." na interní 'MM-DD'
@@ -2528,33 +2571,6 @@ function DesktopHeader({ state, dispatch }) {
         </span>
       </div>
 
-      {/* Bell */}
-      <button style={{
-        width: '34px',
-        height: '34px',
-        borderRadius: '10px',
-        background: 'transparent',
-        border: `1px solid ${TOKENS.borderSoft}`,
-        cursor: 'pointer',
-        position: 'relative',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: TOKENS.textSecondary,
-      }}>
-        <Bell size={15} strokeWidth={1.75} />
-        <div style={{
-          position: 'absolute',
-          top: '7px',
-          right: '8px',
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: TOKENS.accent,
-          border: `1.5px solid ${TOKENS.bg}`,
-        }} />
-      </button>
-
       {/* Primary CTA */}
       <button
         onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: state.view === 'todo' ? 'newTask' : 'newEvent', data: {} } })}
@@ -2946,11 +2962,8 @@ function MiniMonth({ state, dispatch }) {
   const hasContent = (day) => {
     const dateStr = fmtDate(currentYear, currentMonth, day);
     const mmdd = `${String(currentMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const hasEvent = events.some(e =>
-      (e.type !== 'birthday' && e.date === dateStr) ||
-      (e.type === 'birthday' && e.date.slice(5) === mmdd)
-    );
-    const hasTask = tasks.some(t => t.scheduledDate === dateStr);
+    const hasEvent = eventsForDay(events, dateStr).length > 0;
+    const hasTask = tasksForDay(tasks, dateStr).length > 0;
     return hasEvent || hasTask;
   };
 
@@ -3237,13 +3250,8 @@ function SlimRibbon({ state }) {
 
 function TimelineStrip({ state, dispatch }) {
   const today = todayStr();
-  const todayEvents = allEvents(state).filter(e => {
-    const { y, m, d } = parseDate(today);
-    const mmdd = `${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    return (e.type !== 'birthday' && e.date === today) ||
-           (e.type === 'birthday' && e.date.slice(5) === mmdd);
-  });
-  const todayTasks = state.tasks.filter(t => t.scheduledDate === today);
+  const todayEvents = eventsForDay(allEvents(state), today);
+  const todayTasks = tasksForDay(state.tasks, today);
 
   const START_HOUR = 6;
   const END_HOUR = 22;
@@ -3531,11 +3539,8 @@ function DesktopMonthGrid({ state, dispatch }) {
   for (let d = 1; d <= dim; d++) {
     const dateStr = fmtDate(currentYear, currentMonth, d);
     const mmdd = `${String(currentMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const dayEvents = events.filter(e =>
-      (e.type !== 'birthday' && e.date === dateStr) ||
-      (e.type === 'birthday' && e.date.slice(5) === mmdd)
-    );
-    const dayTasks = tasks.filter(t => t.scheduledDate === dateStr);
+    const dayEvents = eventsForDay(events, dateStr);
+    const dayTasks = tasksForDay(tasks, dateStr);
     const isToday = dateStr === today;
     const isSelected = selectedDay === dateStr;
     const dow = new Date(currentYear, currentMonth, d).getDay();
@@ -3709,7 +3714,8 @@ function DesktopMonthGrid({ state, dispatch }) {
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
+        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+        columnGap: '1px',
         background: TOKENS.bgSoft,
         borderBottom: `1px solid ${TOKENS.borderSoft}`,
       }}>
@@ -3729,7 +3735,7 @@ function DesktopMonthGrid({ state, dispatch }) {
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(7, 1fr)',
+        gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
         flex: 1,
         gap: '1px',
         background: TOKENS.borderSoft,
@@ -3994,11 +4000,8 @@ function DesktopDayRail({ state, dispatch }) {
   const nameDay = NAME_DAYS[mmdd];
 
   const everyEvent = allEvents(state);
-  const dayEvents = everyEvent.filter(e =>
-    (e.type !== 'birthday' && e.date === dateStr) ||
-    (e.type === 'birthday' && e.date.slice(5) === mmdd)
-  );
-  const dayTasks = state.tasks.filter(t => t.scheduledDate === dateStr);
+  const dayEvents = eventsForDay(everyEvent, dateStr);
+  const dayTasks = state.tasksForDay(tasks, dateStr);
 
   // Upcoming: next 14 days, events + scheduled tasks, excluding selected day
   const upcoming = [];
@@ -4008,11 +4011,8 @@ function DesktopDayRail({ state, dispatch }) {
     future.setDate(future.getDate() + i);
     const fStr = fmtDate(future.getFullYear(), future.getMonth(), future.getDate());
     const fMmdd = `${String(future.getMonth()+1).padStart(2,'0')}-${String(future.getDate()).padStart(2,'0')}`;
-    const fEvents = everyEvent.filter(e =>
-      (e.type !== 'birthday' && e.date === fStr) ||
-      (e.type === 'birthday' && e.date.slice(5) === fMmdd)
-    );
-    const fTasks = state.tasks.filter(t => t.scheduledDate === fStr && !t.completed);
+    const fEvents = eventsForDay(everyEvent, fStr);
+    const fTasks = tasksForDay(state.tasks, fStr).filter(t => !t.completed);
     [...fEvents, ...fTasks].forEach(item => {
       upcoming.push({
         date: future,
