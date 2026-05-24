@@ -4001,7 +4001,7 @@ function DesktopDayRail({ state, dispatch }) {
 
   const everyEvent = allEvents(state);
   const dayEvents = eventsForDay(everyEvent, dateStr);
-  const dayTasks = state.tasksForDay(tasks, dateStr);
+  const dayTasks = tasksForDay(state.tasks, dateStr);
 
   // Upcoming: next 14 days, events + scheduled tasks, excluding selected day
   const upcoming = [];
