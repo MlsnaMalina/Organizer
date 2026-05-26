@@ -248,6 +248,241 @@ const FONTS = {
   hand: '"Caveat", cursive',
 };
 
+// Ručně-malovaná podtrženíčka, ikony a obrysy pro doodle styl napříč aplikací.
+// Vše SVG, vše malinová, nic textury / rasteru.
+
+function DoodleUnderline({ width = '100%', height = 10, color, opacity = 0.85, strokeWidth = 2 }) {
+  const c = color || TOKENS.accent;
+  return (
+    <svg viewBox="0 0 200 12" preserveAspectRatio="none" aria-hidden
+      style={{ display: 'block', width, height, overflow: 'visible' }}>
+      <path
+        d="M 2,7 C 25,3 50,10 75,6 C 100,2 125,9 150,5 C 170,3 185,8 198,6"
+        fill="none" stroke={c} strokeWidth={strokeWidth} strokeLinecap="round" opacity={opacity}
+      />
+    </svg>
+  );
+}
+
+function DoodleFrame({ children, padding = '24px 26px', background = TOKENS.bg }) {
+  return (
+    <div style={{ position: 'relative', padding, background, borderRadius: '14px' }}>
+      <svg viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden
+        style={{
+          position: 'absolute', inset: '-2px',
+          width: 'calc(100% + 4px)', height: 'calc(100% + 4px)',
+          pointerEvents: 'none', overflow: 'visible',
+        }}>
+        {/* Dvojitý ručně-malovaný rámeček */}
+        <path
+          d="M 12,4 C 80,2 200,5 290,4 C 295,40 296,100 295,180 C 296,194 280,196 200,196 C 100,198 30,196 8,196 C 5,140 3,80 5,18 C 6,9 8,5 12,4 Z"
+          fill="none" stroke={TOKENS.accent} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.9"
+        />
+        <path
+          d="M 18,10 C 90,8 180,11 285,10 C 290,60 291,130 289,188 C 285,191 250,192 150,191 C 70,192 20,191 13,189 C 11,140 9,70 12,22 C 13,14 15,11 18,10"
+          fill="none" stroke={TOKENS.accent} strokeWidth="1.3" strokeLinecap="round" opacity="0.45"
+        />
+      </svg>
+      <div style={{ position: 'relative', zIndex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+function DoodleButton({ children, onClick, variant = 'outline', size = 'md' }) {
+  const isPrimary = variant === 'primary';
+  const fontSize = size === 'sm' ? 16 : 20;
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position: 'relative',
+        padding: size === 'sm' ? '8px 18px' : '10px 22px',
+        background: isPrimary ? TOKENS.accent : 'transparent',
+        color: isPrimary ? '#fff' : TOKENS.accent,
+        border: 'none',
+        fontFamily: FONTS.hand,
+        fontSize: `${fontSize}px`,
+        fontWeight: 700,
+        cursor: 'pointer',
+        letterSpacing: '0.01em',
+      }}
+    >
+      <svg viewBox="0 0 120 44" preserveAspectRatio="none" aria-hidden
+        style={{
+          position: 'absolute', inset: 0, width: '100%', height: '100%',
+          pointerEvents: 'none', overflow: 'visible',
+        }}>
+        <path
+          d="M 8,4 C 40,2 80,5 114,3 C 117,12 118,28 116,40 C 90,42 50,41 6,41 C 3,30 2,18 4,8 C 5,6 6,4 8,4 Z"
+          fill={isPrimary ? TOKENS.accent : 'none'}
+          stroke={TOKENS.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.95"
+        />
+        {isPrimary && (
+          <path
+            d="M 12,8 C 50,6 80,9 110,7"
+            fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1" strokeLinecap="round"
+          />
+        )}
+      </svg>
+      <span style={{ position: 'relative', zIndex: 1 }}>{children}</span>
+    </button>
+  );
+}
+
+// Doodle ikony podle typu události — všechny v malinové, kreslené volnou rukou.
+function DoodleIcon({ kind, size = 72, color }) {
+  const c = color || TOKENS.accent;
+  const common = { fill: 'none', stroke: c, strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const svg = (paths) => (
+    <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden style={{ overflow: 'visible' }}>
+      {paths}
+    </svg>
+  );
+
+  switch (kind) {
+    case 'appointment': // hodiny
+      return svg(<>
+        <path d="M 50,12 C 72,11 88,30 88,52 C 89,72 70,89 50,89 C 30,90 12,72 12,52 C 11,30 28,12 50,12 Z" {...common} />
+        <path d="M 50,28 L 50,52 L 66,60" {...common} strokeWidth="3" />
+        <path d="M 14,18 L 22,26 M 78,18 L 86,26 M 50,6 L 50,12" {...common} strokeWidth="1.8" opacity="0.6" />
+      </>);
+    case 'birthday': // dort se svíčkou
+      return svg(<>
+        <path d="M 18,72 C 18,60 30,58 50,58 C 70,58 82,60 82,72 L 82,84 C 75,87 65,88 50,88 C 35,88 25,87 18,84 Z" {...common} />
+        <path d="M 18,72 C 30,75 45,76 50,75 C 60,77 70,74 82,72" {...common} opacity="0.7" />
+        <path d="M 50,40 L 50,58" {...common} />
+        <path d="M 50,40 C 48,36 47,32 50,28 C 53,32 52,36 50,40 Z" fill={c} stroke={c} strokeWidth="1.5" />
+        <path d="M 28,52 L 28,58 M 72,52 L 72,58" {...common} strokeWidth="1.8" opacity="0.7" />
+      </>);
+    case 'nameday': // kytka
+      return svg(<>
+        <circle cx="50" cy="38" r="10" {...common} />
+        <path d="M 50,38 C 40,28 28,30 30,42 C 32,52 44,50 50,38" {...common} />
+        <path d="M 50,38 C 60,28 72,30 70,42 C 68,52 56,50 50,38" {...common} />
+        <path d="M 50,38 C 40,48 28,46 30,34 C 32,24 44,26 50,38" {...common} />
+        <path d="M 50,38 C 60,48 72,46 70,34 C 68,24 56,26 50,38" {...common} />
+        <circle cx="50" cy="38" r="4" fill={c} stroke="none" />
+        <path d="M 50,52 C 48,62 52,72 50,86" {...common} />
+        <path d="M 50,72 C 56,68 60,74 58,80" {...common} opacity="0.7" />
+      </>);
+    case 'task': // checkbox s fajfkou
+      return svg(<>
+        <path d="M 18,20 C 18,18 22,16 30,16 L 78,16 C 84,16 86,20 86,28 L 86,76 C 86,82 82,84 76,84 L 24,84 C 18,84 16,80 16,72 L 18,20 Z" {...common} />
+        <path d="M 28,52 C 35,60 42,68 48,72 C 56,60 64,40 78,28" stroke={c} fill="none" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      </>);
+    case 'other': // hvězdička (doodle)
+      return svg(<>
+        <path d="M 50,12 L 58,38 L 86,40 L 64,58 L 72,84 L 50,70 L 28,84 L 36,58 L 14,40 L 42,38 Z" {...common} />
+        <path d="M 50,20 L 56,40 L 76,42 L 60,56 L 66,76 L 50,66 L 34,76 L 40,56 L 24,42 L 44,40 Z" {...common} strokeWidth="1.2" opacity="0.5" />
+      </>);
+    default:
+      return svg(<circle cx="50" cy="50" r="38" {...common} />);
+  }
+}
+
+// Modal upozornění — pop-up uprostřed obrazovky, doodle styl, malinová.
+// Texty se generují z propů; tady jen vizuál + tlačítka 'posunout' / 'ok'.
+function NotifModal({ kind, headline, lead, title, meta, onSnooze, onConfirm }) {
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(122,24,64,0.35)',
+        zIndex: 100,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: '380px' }}>
+        <DoodleFrame padding="22px 24px 20px" background={TOKENS.bg}>
+          {/* Ikona */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+            <DoodleIcon kind={kind} size={72} />
+          </div>
+
+          {/* Hlavní headline (Caveat) — např. "za 15 minut" */}
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.hand,
+            fontSize: '34px',
+            fontWeight: 700,
+            color: TOKENS.accent,
+            lineHeight: 1,
+            marginBottom: '6px',
+          }}>
+            {headline}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px', height: '8px' }}>
+            <div style={{ width: '60%' }}>
+              <DoodleUnderline height={8} />
+            </div>
+          </div>
+
+          {/* Typ události */}
+          {lead && (
+            <div style={{
+              textAlign: 'center',
+              fontFamily: FONTS.mono,
+              fontSize: '10.5px',
+              letterSpacing: '0.18em',
+              textTransform: 'uppercase',
+              color: TOKENS.textMuted,
+              fontWeight: 700,
+              marginBottom: '6px',
+            }}>
+              {lead}
+            </div>
+          )}
+
+          {/* Hlavní obsah (osoba/název) */}
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.display,
+            fontSize: '22px',
+            fontWeight: 800,
+            color: TOKENS.text,
+            letterSpacing: '-0.015em',
+            lineHeight: 1.15,
+            marginBottom: '4px',
+          }}>
+            {title}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: meta ? '12px' : '20px', height: '6px' }}>
+            <div style={{ width: '40%' }}>
+              <DoodleUnderline height={6} strokeWidth={1.5} opacity={0.5} />
+            </div>
+          </div>
+
+          {/* Meta (čas, místo) */}
+          {meta && (
+            <div style={{
+              textAlign: 'center',
+              fontFamily: FONTS.body,
+              fontSize: '13.5px',
+              color: TOKENS.textSecondary,
+              marginBottom: '24px',
+              lineHeight: 1.4,
+            }}>
+              {meta}
+            </div>
+          )}
+
+          {/* Tlačítka */}
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center', marginTop: '8px' }}>
+            <DoodleButton variant="outline" onClick={onSnooze}>posunout</DoodleButton>
+            <DoodleButton variant="primary" onClick={onConfirm}>ok</DoodleButton>
+          </div>
+        </DoodleFrame>
+      </div>
+    </div>
+  );
+}
+
 // Doodle kroužek kolem dnešního dne — ručně-malovaný look, dvě nepravidelné smyčky.
 // Vždy umisťovat do prvku s position: relative. Slouží jen vizuálně (pointer-events: none).
 function TodayDoodle({ inset = '-4px', strokeWidth = 2.2, color, opacity = 0.95 }) {
@@ -1441,6 +1676,9 @@ function Modal({ state, dispatch }) {
           {modal.type === 'settings' && <SettingsForm state={state} dispatch={dispatch} onClose={close} />}
           {modal.type === 'dayDetail' && <DayDetailModal state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
           {modal.type === 'people' && <PeopleList state={state} dispatch={dispatch} onClose={close} />}
+          {modal.type === 'notifDemo' && (
+            <NotifDemoLauncher state={state} dispatch={dispatch} onClose={close} />
+          )}
         </div>
       </div>
       <style>{`
@@ -1466,6 +1704,7 @@ function modalTitle(modal) {
     editCategory: 'Kategorie',
     settings: 'Nastavení',
     people: 'Známí a svátky',
+    notifDemo: 'Náhled upozornění',
   }[modal.type] || '';
 }
 
@@ -2393,6 +2632,33 @@ function SettingsForm({ state, dispatch, onClose }) {
         </button>
       ))}
       <div style={{
+        marginTop: '8px',
+        fontFamily: FONTS.mono,
+        fontSize: '10.5px',
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: TOKENS.textMuted,
+        fontWeight: 700,
+      }}>Upozornění</div>
+      <button
+        onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'notifDemo' } })}
+        style={{
+          padding: '12px 14px',
+          borderRadius: '10px',
+          background: TOKENS.accentSoft,
+          border: `1px solid ${TOKENS.accent}30`,
+          color: TOKENS.accent,
+          fontFamily: FONTS.body,
+          fontWeight: 600,
+          fontSize: '13px',
+          cursor: 'pointer',
+          textAlign: 'left',
+        }}
+      >
+        Otestovat vzhled upozornění (náhled)
+      </button>
+
+      <div style={{
         marginTop: '16px',
         padding: '14px',
         background: TOKENS.accentSoft,
@@ -2413,6 +2679,117 @@ function SettingsForm({ state, dispatch, onClose }) {
         Úkoly můžete připnout na konkrétní den kalendáře — otevřete úkol a nastavte datum. Objeví se jako barevné kolečko v buňce.
       </div>
     </div>
+  );
+}
+
+function NotifDemoLauncher({ state, dispatch, onClose }) {
+  const [kind, setKind] = useState('appointment');
+  const [show, setShow] = useState(false);
+
+  const samples = {
+    appointment: {
+      headline: 'za 15 minut',
+      lead: 'Schůzka',
+      title: 'Jana Nováková',
+      meta: '10:00 — 11:30 · Onesip',
+    },
+    birthday: {
+      headline: 'dnes',
+      lead: 'Narozeniny',
+      title: 'Petr Svoboda',
+      meta: 'slaví 38 let',
+    },
+    nameday: {
+      headline: 'dnes',
+      lead: 'Svátek slaví',
+      title: 'Filip',
+      meta: 'nezapomeň gratulovat',
+    },
+    task: {
+      headline: 'do hodiny',
+      lead: 'Úkol · Práce',
+      title: 'Dokončit prezentaci',
+      meta: null,
+    },
+    other: {
+      headline: 'za 1 hodinu',
+      lead: 'Klíště',
+      title: 'kontrola',
+      meta: 'levé lýtko',
+    },
+  };
+
+  const options = [
+    { id: 'appointment', label: 'Schůzka' },
+    { id: 'birthday', label: 'Narozeniny' },
+    { id: 'nameday', label: 'Svátek' },
+    { id: 'task', label: 'Úkol' },
+    { id: 'other', label: 'Ostatní' },
+  ];
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ fontSize: '13px', color: TOKENS.textSecondary, fontFamily: FONTS.body, marginTop: '-4px' }}>
+          Vyber typ a klikni na <strong>Zobrazit náhled</strong>. Takhle bude upozornění vypadat, když přijde čas.
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+          {options.map(o => {
+            const active = kind === o.id;
+            return (
+              <button
+                key={o.id}
+                onClick={() => setKind(o.id)}
+                style={{
+                  padding: '12px 8px',
+                  borderRadius: '10px',
+                  background: active ? TOKENS.accentSoft : TOKENS.bgSoft,
+                  border: `1.5px solid ${active ? TOKENS.accent : TOKENS.borderSoft}`,
+                  color: active ? TOKENS.accent : TOKENS.text,
+                  fontFamily: FONTS.body,
+                  fontSize: '12.5px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                {o.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <button
+          onClick={() => setShow(true)}
+          style={{
+            padding: '12px',
+            borderRadius: '10px',
+            background: TOKENS.accent,
+            color: '#fff',
+            border: 'none',
+            fontFamily: FONTS.body,
+            fontWeight: 700,
+            fontSize: '13.5px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(122,24,64,.22)',
+          }}
+        >
+          Zobrazit náhled
+        </button>
+      </div>
+
+      {show && (
+        <NotifModal
+          kind={kind}
+          headline={samples[kind].headline}
+          lead={samples[kind].lead}
+          title={samples[kind].title}
+          meta={samples[kind].meta}
+          onSnooze={() => setShow(false)}
+          onConfirm={() => setShow(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -2642,6 +3019,26 @@ function DesktopHeader({ state, dispatch }) {
           ⌘K
         </span>
       </div>
+
+      {/* Settings */}
+      <button
+        onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'settings' } })}
+        title="Nastavení"
+        style={{
+          width: '34px',
+          height: '34px',
+          borderRadius: '10px',
+          background: 'transparent',
+          border: `1px solid ${TOKENS.borderSoft}`,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: TOKENS.textSecondary,
+        }}
+      >
+        <Settings size={15} strokeWidth={1.75} />
+      </button>
 
       {/* Primary CTA */}
       <button
