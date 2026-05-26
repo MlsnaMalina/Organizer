@@ -354,16 +354,16 @@ function DoodleIcon({ kind, size = 72, color }) {
         <path d="M 50,40 C 48,36 47,32 50,28 C 53,32 52,36 50,40 Z" fill={c} stroke={c} strokeWidth="1.5" />
         <path d="M 28,52 L 28,58 M 72,52 L 72,58" {...common} strokeWidth="1.8" opacity="0.7" />
       </>);
-    case 'nameday': // kytka
+    case 'nameday': // kytka — 5 okvětních lístků jako kruhy kolem středu
       return svg(<>
-        <circle cx="50" cy="38" r="10" {...common} />
-        <path d="M 50,38 C 40,28 28,30 30,42 C 32,52 44,50 50,38" {...common} />
-        <path d="M 50,38 C 60,28 72,30 70,42 C 68,52 56,50 50,38" {...common} />
-        <path d="M 50,38 C 40,48 28,46 30,34 C 32,24 44,26 50,38" {...common} />
-        <path d="M 50,38 C 60,48 72,46 70,34 C 68,24 56,26 50,38" {...common} />
-        <circle cx="50" cy="38" r="4" fill={c} stroke="none" />
-        <path d="M 50,52 C 48,62 52,72 50,86" {...common} />
-        <path d="M 50,72 C 56,68 60,74 58,80" {...common} opacity="0.7" />
+        <circle cx="50" cy="20" r="10" {...common} />
+        <circle cx="32" cy="30" r="10" {...common} />
+        <circle cx="39" cy="48" r="10" {...common} />
+        <circle cx="61" cy="48" r="10" {...common} />
+        <circle cx="68" cy="30" r="10" {...common} />
+        <circle cx="50" cy="34" r="6" fill={c} stroke="none" />
+        <path d="M 50,54 C 48,64 52,74 50,88" {...common} />
+        <path d="M 50,70 C 58,66 66,70 64,78 C 58,77 53,74 50,70 Z" {...common} />
       </>);
     case 'task': // checkbox s fajfkou
       return svg(<>
