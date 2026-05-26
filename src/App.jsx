@@ -248,6 +248,48 @@ const FONTS = {
   hand: '"Caveat", cursive',
 };
 
+// Doodle kroužek kolem dnešního dne — ručně-malovaný look, dvě nepravidelné smyčky.
+// Vždy umisťovat do prvku s position: relative. Slouží jen vizuálně (pointer-events: none).
+function TodayDoodle({ inset = '-4px', strokeWidth = 2.2, color, opacity = 0.95 }) {
+  const c = color || TOKENS.accent;
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      preserveAspectRatio="none"
+      aria-hidden
+      style={{
+        position: 'absolute',
+        top: inset, left: inset, right: inset, bottom: inset,
+        width: 'auto',
+        height: 'auto',
+        pointerEvents: 'none',
+        overflow: 'visible',
+        zIndex: 2,
+      }}
+    >
+      {/* Hlavní nepravidelný kruh */}
+      <path
+        d="M 49,5 C 73,4 94,21 93,49 C 95,74 74,95 50,94 C 24,95 5,75 6,50 C 5,24 26,6 49,5 Z"
+        fill="none"
+        stroke={c}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={opacity}
+      />
+      {/* Druhý prstenec — ručně-malovaná čmáranice s ocáskem */}
+      <path
+        d="M 53,10 C 30,13 11,30 11,53 C 12,75 31,90 53,90 C 61,91 65,86 62,80"
+        fill="none"
+        stroke={c}
+        strokeWidth={strokeWidth * 0.7}
+        strokeLinecap="round"
+        opacity={opacity * 0.55}
+      />
+    </svg>
+  );
+}
+
 // ============ MAIN APP ============
 
 export default function App() {
@@ -518,27 +560,30 @@ function CalendarGrid({ state, dispatch }) {
         onClick={() => dispatch({ type: 'SELECT_DAY', day: dateStr })}
         style={{
           aspectRatio: '1',
-          background: isToday ? TOKENS.accent : (isSelected ? TOKENS.accentSoft : TOKENS.bg),
-          border: `1px solid ${isToday ? TOKENS.accent : (isSelected ? TOKENS.accent : TOKENS.borderSoft)}`,
+          background: isSelected ? TOKENS.accentSoft : (isToday ? `${TOKENS.accent}0D` : TOKENS.bg),
+          border: `1px solid ${isSelected ? TOKENS.accent : TOKENS.borderSoft}`,
           borderRadius: '10px',
           padding: '5px 5px 4px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'stretch',
-          color: isToday ? '#fff' : (isWeekend ? TOKENS.textMuted : TOKENS.text),
+          color: isWeekend ? TOKENS.textMuted : TOKENS.text,
           cursor: 'pointer',
           position: 'relative',
           transition: 'all 160ms cubic-bezier(.32,.72,.32,1)',
         }}
       >
+        {isToday && <TodayDoodle inset="-3px" />}
         <div style={{
           fontFamily: FONTS.mono,
           fontSize: '12px',
-          fontWeight: isToday ? 700 : 600,
+          fontWeight: isToday ? 800 : 600,
           lineHeight: 1,
           textAlign: 'left',
           fontVariantNumeric: 'tabular-nums',
-          color: isToday ? '#fff' : (isSelected ? TOKENS.accent : (isWeekend ? TOKENS.textMuted : TOKENS.text)),
+          color: isToday ? TOKENS.accent : (isSelected ? TOKENS.accent : (isWeekend ? TOKENS.textMuted : TOKENS.text)),
+          position: 'relative',
+          zIndex: 1,
         }}>
           {d}
         </div>
@@ -550,13 +595,15 @@ function CalendarGrid({ state, dispatch }) {
           gap: '2px',
           marginTop: '4px',
           alignItems: 'flex-start',
+          position: 'relative',
+          zIndex: 1,
         }}>
           {dayEvents.slice(0, 3).map(e => (
             <div key={e.id} style={{
               width: '70%',
               height: '3px',
               borderRadius: '2px',
-              background: isToday ? 'rgba(255,255,255,0.85)' : EVENT_TYPES[e.type].color,
+              background: EVENT_TYPES[e.type].color,
             }} />
           ))}
         </div>
@@ -567,6 +614,8 @@ function CalendarGrid({ state, dispatch }) {
           gap: '3px',
           marginTop: 'auto',
           flexWrap: 'wrap',
+          position: 'relative',
+          zIndex: 1,
         }}>
           {dayTasks.slice(0, 4).map(t => {
             const color = getCategoryColor(t.categoryId);
@@ -575,8 +624,8 @@ function CalendarGrid({ state, dispatch }) {
                 width: '5px',
                 height: '5px',
                 borderRadius: '50%',
-                background: t.completed ? 'transparent' : (isToday ? 'rgba(255,255,255,0.85)' : color),
-                border: t.completed ? `1.2px solid ${isToday ? 'rgba(255,255,255,0.85)' : color}` : 'none',
+                background: t.completed ? 'transparent' : color,
+                border: t.completed ? `1.2px solid ${color}` : 'none',
               }} />
             );
           })}
@@ -2988,14 +3037,14 @@ function MiniMonth({ state, dispatch }) {
         style={{
           aspectRatio: '1',
           padding: 0,
-          background: isToday ? TOKENS.accent : (isSelected ? TOKENS.accentSoft : 'transparent'),
+          background: isSelected ? TOKENS.accentSoft : 'transparent',
           border: 'none',
           borderRadius: '999px',
           cursor: 'pointer',
           fontFamily: FONTS.mono,
           fontSize: '10.5px',
-          fontWeight: isToday ? 700 : 500,
-          color: isToday ? '#fff' : (isSelected ? TOKENS.accent : TOKENS.text),
+          fontWeight: isToday ? 800 : 500,
+          color: isToday ? TOKENS.accent : (isSelected ? TOKENS.accent : TOKENS.text),
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
@@ -3005,15 +3054,17 @@ function MiniMonth({ state, dispatch }) {
           position: 'relative',
         }}
       >
-        <span>{d}</span>
-        {content && !isToday && (
+        {isToday && <TodayDoodle inset="-2px" strokeWidth={1.8} />}
+        <span style={{ position: 'relative', zIndex: 1 }}>{d}</span>
+        {content && (
           <div style={{
             position: 'absolute',
             bottom: '1px',
             width: '3px',
             height: '3px',
             borderRadius: '50%',
-            background: isSelected ? TOKENS.accent : TOKENS.textMuted,
+            background: isToday ? TOKENS.accent : (isSelected ? TOKENS.accent : TOKENS.textMuted),
+            zIndex: 1,
           }} />
         )}
       </button>
@@ -3579,21 +3630,21 @@ function DesktopMonthGrid({ state, dispatch }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {isToday ? (
             <div style={{
+              position: 'relative',
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              minWidth: '22px',
-              height: '22px',
-              padding: '0 7px',
-              borderRadius: '999px',
-              background: TOKENS.accent,
-              color: '#fff',
+              minWidth: '26px',
+              height: '26px',
+              padding: '0 8px',
               fontFamily: FONTS.mono,
-              fontSize: '11px',
-              fontWeight: 700,
+              fontSize: '13px',
+              fontWeight: 800,
+              color: TOKENS.accent,
               fontVariantNumeric: 'tabular-nums',
             }}>
-              {d}
+              <TodayDoodle inset="-3px" strokeWidth={2.2} />
+              <span style={{ position: 'relative', zIndex: 1 }}>{d}</span>
             </div>
           ) : (
             <div style={{
