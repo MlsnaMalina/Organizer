@@ -1,5 +1,5 @@
 import React, { useReducer, useEffect, useState } from 'react';
-import { ChevronLeft, ChevronRight, Plus, X, Bell, MapPin, Cake, Bug, Check, Pin, Trash2, Settings, Search, Calendar as CalIcon, ListTodo, ArrowRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, X, Bell, MapPin, Cake, Bug, Check, Pin, PinOff, Trash2, Settings, Search, Calendar as CalIcon, ListTodo, StickyNote, ArrowRight } from 'lucide-react';
 
 // ============ VIEWPORT HOOK ============
 
@@ -62,6 +62,7 @@ function loadInitialState() {
     notes: {},
     eventSubtypes: EVENT_SUBTYPES_DEFAULT,
     people: [],
+    miniNotes: [],
     selectedDay: null,
     activeCategoryTab: 'prace',
     modal: null,
@@ -144,6 +145,12 @@ function reducer(state, action) {
       return { ...state, people: (state.people || []).map(p => p.id === action.person.id ? action.person : p) };
     case 'DELETE_PERSON':
       return { ...state, people: (state.people || []).filter(p => p.id !== action.id) };
+    case 'ADD_MINI_NOTE':
+      return { ...state, miniNotes: [...(state.miniNotes || []), action.note] };
+    case 'UPDATE_MINI_NOTE':
+      return { ...state, miniNotes: (state.miniNotes || []).map(n => n.id === action.note.id ? action.note : n) };
+    case 'DELETE_MINI_NOTE':
+      return { ...state, miniNotes: (state.miniNotes || []).filter(n => n.id !== action.id) };
     default:
       return state;
   }
@@ -282,6 +289,46 @@ function DoodleFrame({ children, padding = '24px 26px', background = TOKENS.bg }
           d="M 18,10 C 90,8 180,11 285,10 C 290,60 291,130 289,188 C 285,191 250,192 150,191 C 70,192 20,191 13,189 C 11,140 9,70 12,22 C 13,14 15,11 18,10"
           fill="none" stroke={TOKENS.accent} strokeWidth="1.3" strokeLinecap="round" opacity="0.45"
         />
+      </svg>
+      <div style={{ position: 'relative', zIndex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+// Rámeček lístečku — celé obkresleno rukou, různé jemné varianty, aby každá poznámka vypadala trochu jinak.
+function DoodleNotePaper({ children, variant = 0, padding = '18px 18px 14px', color, background }) {
+  const c = color || TOKENS.accent;
+  const bg = background || TOKENS.bg;
+  // 4 různé doodle obrysy (lehce odlišné cesty)
+  const paths = [
+    [
+      "M 10,5 C 80,3 180,6 290,4 C 296,40 297,100 295,182 C 294,194 250,196 150,196 C 60,198 18,196 9,194 C 6,140 4,72 6,18 C 7,9 9,5 10,5 Z",
+      "M 16,11 C 90,9 180,12 284,10 C 289,55 291,130 287,188 C 280,190 220,191 110,190 C 50,191 20,189 14,187 C 12,140 10,70 13,22 C 13,15 14,12 16,11",
+    ],
+    [
+      "M 8,8 C 70,4 200,6 292,5 C 297,46 298,110 294,180 C 296,193 240,195 150,195 C 50,196 16,193 6,190 C 4,135 3,70 4,18 C 5,11 6,8 8,8 Z",
+      "M 14,14 C 78,11 200,13 286,11 C 291,62 292,130 286,184 C 280,186 220,188 110,187 C 40,188 16,186 10,184 C 9,135 8,68 11,22 C 11,16 12,14 14,14",
+    ],
+    [
+      "M 6,6 C 90,3 190,7 294,5 C 298,42 299,108 296,184 C 295,193 240,196 150,195 C 50,196 14,194 7,191 C 5,136 4,68 5,16 C 6,9 7,6 8,6 Z",
+      "M 12,12 C 88,9 190,12 286,10 C 290,52 292,128 287,186 C 280,188 230,189 120,189 C 40,189 16,187 11,185 C 10,138 8,70 11,22 C 11,15 12,12 14,12",
+    ],
+    [
+      "M 12,4 C 80,2 200,6 290,4 C 296,45 297,110 295,182 C 296,193 240,196 150,196 C 60,197 18,195 8,192 C 5,138 3,72 5,18 C 6,9 8,5 12,4 Z",
+      "M 18,10 C 90,8 200,11 284,10 C 289,58 291,132 287,186 C 280,189 230,190 110,190 C 50,191 22,189 14,187 C 12,138 10,70 13,22 C 14,15 15,11 18,10",
+    ],
+  ];
+  const [main, inner] = paths[variant % paths.length];
+  return (
+    <div style={{ position: 'relative', padding, background: bg, borderRadius: '12px' }}>
+      <svg viewBox="0 0 300 200" preserveAspectRatio="none" aria-hidden
+        style={{
+          position: 'absolute', inset: '-2px',
+          width: 'calc(100% + 4px)', height: 'calc(100% + 4px)',
+          pointerEvents: 'none', overflow: 'visible',
+        }}>
+        <path d={main} fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity="0.85" />
+        <path d={inner} fill="none" stroke={c} strokeWidth="1.2" strokeLinecap="round" opacity="0.4" />
       </svg>
       <div style={{ position: 'relative', zIndex: 1 }}>{children}</div>
     </div>
@@ -566,7 +613,8 @@ export default function App() {
           <Header view={state.view} dispatch={dispatch} state={state} />
           {state.view === 'calendar' && <CalendarView state={state} dispatch={dispatch} />}
           {state.view === 'todo' && <TodoView state={state} dispatch={dispatch} />}
-          <FAB dispatch={dispatch} />
+          {state.view === 'notes' && <NotesView state={state} dispatch={dispatch} />}
+          {state.view !== 'notes' && <FAB dispatch={dispatch} />}
           {state.modal && <Modal state={state} dispatch={dispatch} />}
         </div>
       </div>
@@ -642,6 +690,7 @@ function Header({ view, dispatch, state }) {
         {[
           { id: 'calendar', label: 'Kalendář' },
           { id: 'todo', label: 'Úkoly' },
+          { id: 'notes', label: 'Poznámky' },
         ].map(t => {
           const active = view === t.id;
           return (
@@ -1676,6 +1725,7 @@ function Modal({ state, dispatch }) {
           {modal.type === 'settings' && <SettingsForm state={state} dispatch={dispatch} onClose={close} />}
           {modal.type === 'dayDetail' && <DayDetailModal state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
           {modal.type === 'people' && <PeopleList state={state} dispatch={dispatch} onClose={close} />}
+          {modal.type === 'noteEditor' && <NoteEditor state={state} dispatch={dispatch} onClose={close} note={modal.data} />}
           {modal.type === 'notifDemo' && (
             <NotifDemoLauncher state={state} dispatch={dispatch} onClose={close} />
           )}
@@ -1705,6 +1755,7 @@ function modalTitle(modal) {
     settings: 'Nastavení',
     people: 'Známí a svátky',
     notifDemo: 'Náhled upozornění',
+    noteEditor: modal.data ? 'Upravit poznámku' : 'Nová poznámka',
   }[modal.type] || '';
 }
 
@@ -2298,6 +2349,316 @@ function fmtDdMm(mmdd) {
   const m = parseInt(mmdd.slice(0,2), 10);
   const d = parseInt(mmdd.slice(3), 10);
   return `${d}. ${MONTHS_LOWER[m - 1]}`;
+}
+
+// ============ NOTES VIEW (Poznámky) ============
+
+function NotesView({ state, dispatch, desktop }) {
+  const notes = (state.miniNotes || []);
+  const pinned = notes.filter(n => n.pinned).sort((a, b) => b.createdAt - a.createdAt);
+  const rest = notes.filter(n => !n.pinned).sort((a, b) => b.createdAt - a.createdAt);
+  const all = [...pinned, ...rest];
+
+  const onNew = () => {
+    dispatch({ type: 'OPEN_MODAL', modal: { type: 'noteEditor' } });
+  };
+
+  return (
+    <div style={{
+      padding: desktop ? '20px 24px' : '16px 16px 100px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '18px',
+      flex: 1,
+    }}>
+      {desktop && (
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '20px' }}>
+          <div>
+            <div style={{
+              fontFamily: FONTS.mono,
+              fontSize: '11px',
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: TOKENS.accent,
+              fontWeight: 700,
+              marginBottom: '4px',
+            }}>
+              VOLNÝ PROSTOR
+            </div>
+            <h1 style={{
+              fontFamily: FONTS.display,
+              fontSize: '28px',
+              fontWeight: 800,
+              letterSpacing: '-0.02em',
+              color: TOKENS.text,
+              margin: 0,
+              lineHeight: 1,
+            }}>
+              Poznámky
+            </h1>
+          </div>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={onNew}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: '999px',
+              background: TOKENS.accent,
+              color: '#fff',
+              border: 'none',
+              fontFamily: FONTS.body,
+              fontSize: '12.5px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 2px 6px rgba(122,24,64,.22)',
+            }}
+          >
+            <Plus size={14} strokeWidth={2.5} />
+            Nová poznámka
+          </button>
+        </div>
+      )}
+
+      {!desktop && (
+        <button
+          onClick={onNew}
+          style={{
+            alignSelf: 'flex-end',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '8px 14px',
+            borderRadius: '999px',
+            background: TOKENS.accent,
+            color: '#fff',
+            border: 'none',
+            fontFamily: FONTS.body,
+            fontSize: '12.5px',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 2px 6px rgba(122,24,64,.22)',
+          }}
+        >
+          <Plus size={14} strokeWidth={2.5} />
+          Nová poznámka
+        </button>
+      )}
+
+      {all.length === 0 && (
+        <div style={{
+          padding: '48px 20px',
+          textAlign: 'center',
+          fontFamily: FONTS.hand,
+          fontSize: '26px',
+          color: TOKENS.textMuted,
+          border: `2px dashed ${TOKENS.borderSoft}`,
+          borderRadius: '14px',
+          lineHeight: 1.3,
+        }}>
+          žádné poznámky.<br />
+          <span style={{ fontSize: '18px', color: TOKENS.textMuted }}>napiš si první lísteček —</span>
+        </div>
+      )}
+
+      {all.length > 0 && (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: desktop ? 'repeat(auto-fill, minmax(240px, 1fr))' : '1fr',
+          gap: '16px',
+          alignItems: 'start',
+        }}>
+          {all.map((n, i) => (
+            <NoteCard key={n.id} note={n} variant={i % 4} dispatch={dispatch} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NoteCard({ note, variant, dispatch }) {
+  const date = new Date(note.createdAt);
+  const dateLabel = `${date.getDate()}. ${MONTHS_LOWER[date.getMonth()].slice(0,3)}. ${date.getFullYear()}`;
+
+  return (
+    <div
+      onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'noteEditor', data: note } })}
+      style={{ cursor: 'pointer' }}
+    >
+      <DoodleNotePaper variant={variant} padding="16px 18px 12px">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+          {note.title && (
+            <div style={{
+              flex: 1,
+              fontFamily: FONTS.display,
+              fontSize: '15px',
+              fontWeight: 700,
+              color: TOKENS.text,
+              lineHeight: 1.25,
+              letterSpacing: '-0.01em',
+            }}>
+              {note.title}
+            </div>
+          )}
+          {!note.title && <div style={{ flex: 1 }} />}
+          {note.pinned && (
+            <Pin size={12} strokeWidth={2} color={TOKENS.accent} style={{ marginTop: '2px', flexShrink: 0 }} />
+          )}
+        </div>
+
+        <div style={{
+          marginTop: note.title ? '8px' : 0,
+          fontFamily: FONTS.hand,
+          fontSize: '19px',
+          fontWeight: 500,
+          color: TOKENS.accentStrong,
+          lineHeight: 1.25,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          minHeight: '24px',
+        }}>
+          {note.body || <span style={{ color: TOKENS.textMuted, fontStyle: 'italic' }}>(prázdná poznámka)</span>}
+        </div>
+
+        <div style={{
+          marginTop: '14px',
+          fontFamily: FONTS.mono,
+          fontSize: '9.5px',
+          letterSpacing: '0.1em',
+          color: TOKENS.textMuted,
+          fontWeight: 600,
+          textTransform: 'uppercase',
+        }}>
+          {dateLabel}
+        </div>
+      </DoodleNotePaper>
+    </div>
+  );
+}
+
+function NoteEditor({ state, dispatch, onClose, note }) {
+  const isEdit = !!note;
+  const [title, setTitle] = useState(note?.title || '');
+  const [body, setBody] = useState(note?.body || '');
+
+  const save = () => {
+    const t = title.trim();
+    const b = body.trim();
+    if (!t && !b) {
+      // Prázdná poznámka — pokud edit, smazat; pokud new, jen zavřít
+      if (isEdit) dispatch({ type: 'DELETE_MINI_NOTE', id: note.id });
+      onClose();
+      return;
+    }
+    const data = {
+      id: note?.id || uid(),
+      title: t || null,
+      body: b,
+      pinned: note?.pinned || false,
+      createdAt: note?.createdAt || Date.now(),
+    };
+    dispatch({ type: isEdit ? 'UPDATE_MINI_NOTE' : 'ADD_MINI_NOTE', note: data });
+    onClose();
+  };
+
+  const togglePin = () => {
+    if (!isEdit) return;
+    dispatch({ type: 'UPDATE_MINI_NOTE', note: { ...note, pinned: !note.pinned } });
+  };
+
+  const del = () => {
+    dispatch({ type: 'DELETE_MINI_NOTE', id: note.id });
+    onClose();
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+      <Field label="Titulek (volitelné)">
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="krátký nadpis…"
+          style={inputStyle}
+        />
+      </Field>
+
+      <Field label="Poznámka">
+        <textarea
+          autoFocus
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="napiš si cokoliv…"
+          rows={6}
+          style={{
+            ...inputStyle,
+            fontFamily: FONTS.hand,
+            fontSize: '19px',
+            color: TOKENS.accentStrong,
+            resize: 'vertical',
+            minHeight: '120px',
+            lineHeight: 1.3,
+          }}
+        />
+      </Field>
+
+      <div style={{ display: 'flex', gap: '8px', paddingTop: '4px' }}>
+        {isEdit && (
+          <>
+            <button
+              onClick={del}
+              title="Smazat"
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: TOKENS.bgSoft,
+                color: EVENT_TYPES.other.color,
+                border: `1px solid ${TOKENS.border}`,
+                cursor: 'pointer',
+              }}
+            >
+              <Trash2 size={16} />
+            </button>
+            <button
+              onClick={togglePin}
+              title={note.pinned ? 'Odepnout' : 'Připnout nahoru'}
+              style={{
+                padding: '12px 14px',
+                borderRadius: '10px',
+                background: note.pinned ? TOKENS.accentSoft : TOKENS.bgSoft,
+                color: TOKENS.accent,
+                border: `1px solid ${note.pinned ? TOKENS.accent : TOKENS.border}`,
+                cursor: 'pointer',
+              }}
+            >
+              {note.pinned ? <PinOff size={16} /> : <Pin size={16} />}
+            </button>
+          </>
+        )}
+        <button
+          onClick={save}
+          style={{
+            flex: 1,
+            padding: '12px',
+            borderRadius: '10px',
+            background: TOKENS.accent,
+            color: '#fff',
+            border: 'none',
+            fontFamily: FONTS.body,
+            fontWeight: 700,
+            fontSize: '14px',
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(122,24,64,.22)',
+          }}
+        >
+          {isEdit ? 'Uložit' : 'Přidat poznámku'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function PeopleList({ state, dispatch, onClose }) {
@@ -2944,6 +3305,7 @@ function DesktopHeader({ state, dispatch }) {
         {[
           { id: 'calendar', label: 'Kalendář' },
           { id: 'todo', label: 'Úkoly' },
+          { id: 'notes', label: 'Poznámky' },
         ].map(t => {
           const active = state.view === t.id;
           return (
@@ -3214,6 +3576,7 @@ function DesktopSidebar({ state, dispatch }) {
           {[
             { id: 'calendar', label: 'Kalendář', icon: CalIcon },
             { id: 'todo', label: 'Úkoly', icon: ListTodo },
+            { id: 'notes', label: 'Poznámky', icon: StickyNote },
           ].map(item => {
             const active = state.view === item.id;
             const Icon = item.icon;
@@ -3579,6 +3942,7 @@ function MiniMonth({ state, dispatch }) {
 
 function DesktopMain({ state, dispatch }) {
   if (state.view === 'todo') return <DesktopTasksView state={state} dispatch={dispatch} />;
+  if (state.view === 'notes') return <NotesView state={state} dispatch={dispatch} desktop />;
   return <DesktopCalendarView state={state} dispatch={dispatch} />;
 }
 
