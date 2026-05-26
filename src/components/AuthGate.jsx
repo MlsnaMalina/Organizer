@@ -177,6 +177,23 @@ function LoginScreen() {
           </form>
         )}
       </div>
+
+      <div style={{
+        marginTop: 18,
+        fontFamily: '"Caveat", cursive',
+        fontSize: 17,
+        color: 'rgba(26,23,20,0.55)',
+        textAlign: 'center',
+        lineHeight: 1.4,
+      }}>
+        vytvořila Kateřina Mlsnová{' '}
+        <a
+          href="https://www.katerinamlsnova.cz"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: ACCENT, textDecoration: 'none', borderBottom: `1px dashed ${ACCENT}` }}
+        >www.katerinamlsnova.cz</a>
+      </div>
     </div>
   );
 }
