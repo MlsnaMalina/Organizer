@@ -923,7 +923,11 @@ function EventCard({ event, dispatch }) {
             marginTop: '3px',
           }}>
             {event.type === 'other' && event.customLabel ? event.customLabel : config.label}
-            {event.time && <span style={{ color: TOKENS.textMuted, marginLeft: '8px' }}>{event.time}</span>}
+            {event.time && (
+              <span style={{ color: TOKENS.textMuted, marginLeft: '8px' }}>
+                {event.time}{event.endTime ? ` – ${event.endTime}` : ''}
+              </span>
+            )}
             {event.endDate && event.endDate > event.date && (() => {
               const a = parseDate(event.date);
               const b = parseDate(event.endDate);
@@ -1623,6 +1627,7 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
   const [date, setDate] = useState(event?.date || initialDate || todayStr());
   const [endDate, setEndDate] = useState(event?.endDate || '');
   const [time, setTime] = useState(event?.time || '');
+  const [endTime, setEndTime] = useState(event?.endTime || '');
   const [person, setPerson] = useState(event?.person || '');
   const [location, setLocation] = useState(event?.location || '');
   const [customLabel, setCustomLabel] = useState(event?.customLabel || '');
@@ -1636,12 +1641,16 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
     if (!person.trim()) return;
     const cl = type === 'other' ? customLabel.trim() : '';
     const cleanEnd = supportsRange && endDate && endDate > date ? endDate : null;
+    // endTime má smysl jen pro Schůzku a jen pokud máme i čas začátku a koncový čas je pozdější
+    const cleanEndTime = type === 'appointment' && time && endTime && endTime > time
+      ? endTime : null;
     const data = {
       id: event?.id || uid(),
       type,
       date,
       endDate: cleanEnd,
       time: type === 'appointment' && time ? time : null,
+      endTime: cleanEndTime,
       person: person.trim(),
       location: type === 'appointment' ? (location.trim() || null) : null,
       customLabel: cl || null,
@@ -1727,29 +1736,43 @@ function EventForm({ state, dispatch, onClose, event, initialType, initialDate }
         />
       </Field>
 
-      <div style={type === 'appointment' ? { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' } : {}}>
-        <Field label={supportsRange ? 'Datum od' : 'Datum'}>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              if (endDate && e.target.value > endDate) setEndDate('');
-            }}
-            style={inputStyle}
-          />
-        </Field>
-        {type === 'appointment' && (
-          <Field label="Čas">
+      <Field label={supportsRange ? 'Datum od' : 'Datum'}>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => {
+            setDate(e.target.value);
+            if (endDate && e.target.value > endDate) setEndDate('');
+          }}
+          style={inputStyle}
+        />
+      </Field>
+
+      {type === 'appointment' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <Field label="Čas od">
             <input
               type="time"
               value={time}
-              onChange={(e) => setTime(e.target.value)}
+              onChange={(e) => {
+                setTime(e.target.value);
+                if (endTime && e.target.value && endTime <= e.target.value) setEndTime('');
+              }}
               style={inputStyle}
             />
           </Field>
-        )}
-      </div>
+          <Field label="Čas do (volitelné)">
+            <input
+              type="time"
+              value={endTime}
+              min={time || undefined}
+              disabled={!time}
+              onChange={(e) => setEndTime(e.target.value)}
+              style={{ ...inputStyle, opacity: time ? 1 : 0.5, cursor: time ? 'text' : 'not-allowed' }}
+            />
+          </Field>
+        </div>
+      )}
 
       {supportsRange && (
         <Field label="Datum do (volitelné — pro vícedenní událost)">
@@ -3369,20 +3392,24 @@ function TimelineStrip({ state, dispatch }) {
           }} />
         ))}
 
-        {/* Event blocks (top half) */}
+        {/* Event blocks (top half) — pokud má endTime, je to blok přes interval */}
         {todayEvents.filter(e => e.time && timeToPercent(e.time) !== null).map((e) => {
-          const left = timeToPercent(e.time);
+          const startPct = timeToPercent(e.time);
+          const endPct = e.endTime ? timeToPercent(e.endTime) : null;
           const cfg = EVENT_TYPES[e.type];
+          const hasRange = endPct !== null && endPct > startPct;
+          const width = hasRange ? `${endPct - startPct}%` : undefined;
           return (
             <div
               key={e.id}
-              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'editEvent', data: e } })}
+              onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: e._derived ? 'people' : 'editEvent', data: e._derived ? null : e } })}
               style={{
                 position: 'absolute',
                 top: '6px',
-                left: `${left}%`,
-                maxWidth: '220px',
-                minWidth: '90px',
+                left: `${startPct}%`,
+                width: width,
+                maxWidth: hasRange ? undefined : '220px',
+                minWidth: hasRange ? undefined : '90px',
                 padding: '4px 8px 4px 8px',
                 background: `${cfg.color}15`,
                 borderLeft: `3px solid ${cfg.color}`,
@@ -3401,7 +3428,7 @@ function TimelineStrip({ state, dispatch }) {
                 lineHeight: 1.1,
                 fontVariantNumeric: 'tabular-nums',
               }}>
-                {e.time}
+                {e.time}{e.endTime ? `–${e.endTime}` : ''}
               </div>
               <div style={{
                 fontFamily: FONTS.body,
