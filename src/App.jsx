@@ -63,6 +63,9 @@ function loadInitialState() {
     eventSubtypes: EVENT_SUBTYPES_DEFAULT,
     people: [],
     miniNotes: [],
+    anniversaries: [],
+    askedEventIds: [],
+    featureMarks: {}, // např. anniversariesEnabledAt: timestamp prvního spuštění
     selectedDay: null,
     activeCategoryTab: 'prace',
     modal: null,
@@ -151,6 +154,22 @@ function reducer(state, action) {
       return { ...state, miniNotes: (state.miniNotes || []).map(n => n.id === action.note.id ? action.note : n) };
     case 'DELETE_MINI_NOTE':
       return { ...state, miniNotes: (state.miniNotes || []).filter(n => n.id !== action.id) };
+    case 'ADD_ANNIVERSARY':
+      return {
+        ...state,
+        anniversaries: [...(state.anniversaries || []), action.anniversary],
+        askedEventIds: action.eventId
+          ? [...new Set([...(state.askedEventIds || []), action.eventId])]
+          : (state.askedEventIds || []),
+      };
+    case 'DELETE_ANNIVERSARY':
+      return { ...state, anniversaries: (state.anniversaries || []).filter(a => a.id !== action.id) };
+    case 'UPDATE_ANNIVERSARY':
+      return { ...state, anniversaries: (state.anniversaries || []).map(a => a.id === action.anniversary.id ? action.anniversary : a) };
+    case 'MARK_EVENT_ASKED':
+      return { ...state, askedEventIds: [...new Set([...(state.askedEventIds || []), action.eventId])] };
+    case 'SET_FEATURE_MARK':
+      return { ...state, featureMarks: { ...(state.featureMarks || {}), [action.key]: action.value } };
     default:
       return state;
   }
@@ -530,6 +549,63 @@ function NotifModal({ kind, headline, lead, title, meta, onSnooze, onConfirm }) 
   );
 }
 
+// Doodle srdíčko — používáme pro výročí v kalendáři a v paměťovém modalu.
+function DoodleHeart({ size = 18, color, opacity = 0.95, strokeWidth = 2 }) {
+  const c = color || TOKENS.accent;
+  return (
+    <svg viewBox="0 0 30 28" width={size} height={size} aria-hidden style={{ overflow: 'visible', flexShrink: 0 }}>
+      <path
+        d="M 15,25 C 6,20 1,13 3,7 C 5,2 11,2 15,8 C 19,2 25,2 27,7 C 29,13 24,20 15,25 Z"
+        fill={c}
+        stroke={c}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity={opacity}
+      />
+    </svg>
+  );
+}
+
+// Řada srdíček podle počtu let. Max 10 srdíček, pokud víc — 10 + text "před X lety".
+function DoodleHeartsRow({ years, size = 18, maxInline = 10 }) {
+  if (!years || years < 1) return null;
+  const count = Math.min(years, maxInline);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap', justifyContent: 'center' }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <DoodleHeart key={i} size={size} opacity={0.85 + (i % 3) * 0.05} />
+      ))}
+      {years > maxInline && (
+        <span style={{
+          fontFamily: FONTS.hand,
+          fontSize: '20px',
+          color: TOKENS.accent,
+          fontWeight: 700,
+          marginLeft: '6px',
+        }}>
+          před {years} lety
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Vrátí seznam výročí, jejichž MM-DD spadá na daný den a jsou minimálně rok stará.
+function anniversariesForDay(state, dateStr) {
+  const list = state.anniversaries || [];
+  const target = parseDate(dateStr);
+  const mmdd = dateStr.slice(5);
+  return list
+    .filter(a => a.originalDate && a.originalDate.slice(5) === mmdd)
+    .map(a => {
+      const orig = parseDate(a.originalDate);
+      const years = target.y - orig.y;
+      return { ...a, years };
+    })
+    .filter(x => x.years >= 1);
+}
+
 // Doodle kroužek kolem dnešního dne — ručně-malovaný look, dvě nepravidelné smyčky.
 // Vždy umisťovat do prvku s position: relative. Slouží jen vizuálně (pointer-events: none).
 function TodayDoodle({ inset = '-4px', strokeWidth = 2.2, color, opacity = 0.95 }) {
@@ -574,6 +650,32 @@ function TodayDoodle({ inset = '-4px', strokeWidth = 2.2, color, opacity = 0.95 
 
 // ============ MAIN APP ============
 
+// Najde první minulou Schůzku/Ostatní, na kterou jsme se ještě nezeptali,
+// a její konec spadá do lookback okna (14 dní). Vrací null pokud nic.
+function findPendingAnniversaryEvent(state) {
+  const events = state.events || [];
+  const asked = new Set(state.askedEventIds || []);
+  const now = Date.now();
+  const cutoffTs = now - 14 * 86400000;
+  // Pokud uživatel funkci viděl poprvé teď, neptej se na starší události před tímhle bodem
+  const enabledAt = state.featureMarks?.anniversariesEnabledAt || 0;
+  const threshold = Math.max(cutoffTs, enabledAt);
+
+  for (const e of events) {
+    if (asked.has(e.id)) continue;
+    if (e.type !== 'appointment' && e.type !== 'other') continue;
+    if (!e.date) continue;
+    const endDate = e.endDate || e.date;
+    const endTime = e.endTime || e.time || '23:59';
+    const endTs = new Date(`${endDate}T${endTime}:00`).getTime();
+    if (Number.isNaN(endTs)) continue;
+    if (endTs > now) continue;       // ještě neproběhlo
+    if (endTs < threshold) continue; // moc staré nebo před zapnutím funkce
+    return e;
+  }
+  return null;
+}
+
 export default function App() {
   const [state, dispatch] = useReducer(reducer, null, loadInitialState);
   const { isDesktop } = useViewport();
@@ -582,11 +684,22 @@ export default function App() {
     saveState(state);
   }, [state]);
 
+  // Jednorázové označení "od teď sleduj výročí" — abychom se neptali na starou historii.
+  useEffect(() => {
+    if (!state.featureMarks?.anniversariesEnabledAt) {
+      dispatch({ type: 'SET_FEATURE_MARK', key: 'anniversariesEnabledAt', value: Date.now() });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Zjisti, jestli máme co se zeptat (a žádný jiný modal není otevřený).
+  const pendingAnnivEvent = !state.modal ? findPendingAnniversaryEvent(state) : null;
+
   if (isDesktop) {
     return (
       <>
         <DesktopApp state={state} dispatch={dispatch} />
         {state.modal && <Modal state={state} dispatch={dispatch} />}
+        {pendingAnnivEvent && <AnniversaryPrompt event={pendingAnnivEvent} dispatch={dispatch} />}
       </>
     );
   }
@@ -617,6 +730,7 @@ export default function App() {
           {state.view !== 'notes' && <FAB dispatch={dispatch} />}
           {state.modal && <Modal state={state} dispatch={dispatch} />}
         </div>
+        {pendingAnnivEvent && <AnniversaryPrompt event={pendingAnnivEvent} dispatch={dispatch} />}
       </div>
     </>
   );
@@ -838,10 +952,17 @@ function CalendarGrid({ state, dispatch }) {
     const dow = new Date(currentYear, currentMonth, d).getDay();
     const isWeekend = dow === 0 || dow === 6;
 
+    const dayAnniv = anniversariesForDay(state, dateStr);
     cells.push(
       <button
         key={d}
-        onClick={() => dispatch({ type: 'SELECT_DAY', day: dateStr })}
+        onClick={(ev) => {
+          if (ev.target.closest('[data-heart]')) {
+            dispatch({ type: 'OPEN_MODAL', modal: { type: 'anniversaryDay', data: { day: dateStr } } });
+            return;
+          }
+          dispatch({ type: 'SELECT_DAY', day: dateStr });
+        }}
         style={{
           aspectRatio: '1',
           background: isSelected ? TOKENS.accentSoft : (isToday ? `${TOKENS.accent}0D` : TOKENS.bg),
@@ -858,6 +979,22 @@ function CalendarGrid({ state, dispatch }) {
         }}
       >
         {isToday && <TodayDoodle inset="-3px" />}
+        {dayAnniv.length > 0 && (
+          <span
+            data-heart
+            style={{
+              position: 'absolute',
+              top: '4px',
+              right: '4px',
+              zIndex: 3,
+              cursor: 'pointer',
+              padding: '2px',
+            }}
+            title="Výročí"
+          >
+            <DoodleHeart size={12} />
+          </span>
+        )}
         <div style={{
           fontFamily: FONTS.mono,
           fontSize: '12px',
@@ -1726,6 +1863,8 @@ function Modal({ state, dispatch }) {
           {modal.type === 'dayDetail' && <DayDetailModal state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
           {modal.type === 'people' && <PeopleList state={state} dispatch={dispatch} onClose={close} />}
           {modal.type === 'noteEditor' && <NoteEditor state={state} dispatch={dispatch} onClose={close} note={modal.data} />}
+          {modal.type === 'anniversariesList' && <AnniversariesList state={state} dispatch={dispatch} onClose={close} />}
+          {modal.type === 'anniversaryDay' && <AnniversaryDayPopup state={state} dispatch={dispatch} onClose={close} day={modal.data?.day} />}
           {modal.type === 'notifDemo' && (
             <NotifDemoLauncher state={state} dispatch={dispatch} onClose={close} />
           )}
@@ -1756,6 +1895,11 @@ function modalTitle(modal) {
     people: 'Známí a svátky',
     notifDemo: 'Náhled upozornění',
     noteEditor: modal.data ? 'Upravit poznámku' : 'Nová poznámka',
+    anniversariesList: 'Výročí',
+    anniversaryDay: modal.data?.day ? (() => {
+      const p = parseDate(modal.data.day);
+      return `Výročí · ${p.d}. ${MONTHS_LOWER[p.m]}`;
+    })() : 'Výročí',
   }[modal.type] || '';
 }
 
@@ -2892,6 +3036,345 @@ function PeopleList({ state, dispatch, onClose }) {
   );
 }
 
+// Pop-up "Mám si tohle zapamatovat?" — auto se objeví po skončení Schůzky/Ostatní události.
+// Mountuje se přímo do <App>, ne přes modal slot.
+function AnniversaryPrompt({ event, dispatch }) {
+  const [message, setMessage] = useState('');
+
+  const save = () => {
+    const cfg = EVENT_TYPES[event.type] || {};
+    const title = event.type === 'other' && event.customLabel
+      ? `${event.customLabel}${event.person ? ' — ' + event.person : ''}`
+      : `${cfg.label || 'Událost'} — ${event.person || ''}`;
+    const meta = [
+      event.location || null,
+      event.time ? (event.endTime ? `${event.time}–${event.endTime}` : event.time) : null,
+    ].filter(Boolean).join(' · ');
+
+    const anniversary = {
+      id: uid(),
+      title,
+      originalDate: event.date,
+      meta: meta || null,
+      message: message.trim() || null,
+      sourceType: event.type,
+      sourceEventId: event.id,
+      savedAt: Date.now(),
+    };
+    dispatch({ type: 'ADD_ANNIVERSARY', anniversary, eventId: event.id });
+  };
+
+  const dismiss = () => {
+    dispatch({ type: 'MARK_EVENT_ASKED', eventId: event.id });
+  };
+
+  // Datum události zobrazené hezky
+  const d = parseDate(event.date);
+  const dateLabel = `${DAYS_FULL[new Date(d.y, d.m, d.d).getDay()]} ${d.d}. ${MONTHS_LOWER[d.m]}`;
+
+  return (
+    <div
+      role="alertdialog"
+      aria-modal="true"
+      style={{
+        position: 'fixed', inset: 0,
+        background: 'rgba(122,24,64,0.35)',
+        zIndex: 110,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        padding: '20px',
+      }}
+    >
+      <div style={{ width: '100%', maxWidth: '380px' }}>
+        <DoodleNotePaper variant={1} padding="22px 24px 18px" background={TOKENS.bg}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '4px' }}>
+            <DoodleHeart size={42} />
+          </div>
+
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.hand,
+            fontSize: '28px',
+            fontWeight: 700,
+            color: TOKENS.accent,
+            lineHeight: 1.1,
+            marginBottom: '4px',
+          }}>
+            Mám si tohle zapamatovat?
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '14px', height: '8px' }}>
+            <div style={{ width: '60%' }}>
+              <DoodleUnderline height={8} />
+            </div>
+          </div>
+
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.display,
+            fontSize: '17px',
+            fontWeight: 800,
+            color: TOKENS.text,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.2,
+            marginBottom: '4px',
+          }}>
+            {event.type === 'other' && event.customLabel ? event.customLabel : (EVENT_TYPES[event.type]?.label || 'Událost')}
+            {event.person && <span style={{ color: TOKENS.textSecondary, fontWeight: 600 }}> — {event.person}</span>}
+          </div>
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.body,
+            fontSize: '12.5px',
+            color: TOKENS.textSecondary,
+            marginBottom: '18px',
+            lineHeight: 1.4,
+          }}>
+            {dateLabel}
+            {event.location && <> · {event.location}</>}
+          </div>
+
+          <div style={{
+            fontFamily: FONTS.mono,
+            fontSize: '9.5px',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: TOKENS.textMuted,
+            fontWeight: 700,
+            marginBottom: '6px',
+            textAlign: 'center',
+          }}>
+            vzkaz pro sebe za rok (volitelné)
+          </div>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="napiš si, co si chceš zapamatovat…"
+            rows={3}
+            style={{
+              ...inputStyle,
+              fontFamily: FONTS.hand,
+              fontSize: '18px',
+              color: TOKENS.accentStrong,
+              lineHeight: 1.3,
+              resize: 'vertical',
+              minHeight: '70px',
+              marginBottom: '16px',
+            }}
+          />
+
+          <div style={{ display: 'flex', gap: '14px', justifyContent: 'center' }}>
+            <DoodleButton variant="outline" onClick={dismiss}>ne</DoodleButton>
+            <DoodleButton variant="primary" onClick={save}>ano</DoodleButton>
+          </div>
+        </DoodleNotePaper>
+      </div>
+    </div>
+  );
+}
+
+// Pop-up po kliknutí na srdíčko v kalendáři — ukáže výročí pro daný den.
+function AnniversaryDayPopup({ state, dispatch, onClose, day }) {
+  const list = anniversariesForDay(state, day);
+  if (list.length === 0) return null;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      {list.map((a, idx) => (
+        <DoodleNotePaper key={a.id} variant={idx % 4} padding="20px 22px 16px">
+          <div style={{ marginBottom: '12px', display: 'flex', justifyContent: 'center' }}>
+            <DoodleHeartsRow years={a.years} size={20} />
+          </div>
+
+          {a.years <= 10 && (
+            <div style={{
+              textAlign: 'center',
+              fontFamily: FONTS.hand,
+              fontSize: '22px',
+              fontWeight: 700,
+              color: TOKENS.accent,
+              marginBottom: '6px',
+              lineHeight: 1,
+            }}>
+              {a.years === 1 ? 'vloni' : `před ${a.years} lety`}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '10px', height: '6px' }}>
+            <div style={{ width: '40%' }}>
+              <DoodleUnderline height={6} strokeWidth={1.5} opacity={0.5} />
+            </div>
+          </div>
+
+          <div style={{
+            textAlign: 'center',
+            fontFamily: FONTS.display,
+            fontSize: '17px',
+            fontWeight: 800,
+            color: TOKENS.text,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.2,
+          }}>
+            {a.title}
+          </div>
+          {a.meta && (
+            <div style={{
+              textAlign: 'center',
+              fontFamily: FONTS.body,
+              fontSize: '12px',
+              color: TOKENS.textSecondary,
+              marginTop: '4px',
+            }}>
+              {a.meta}
+            </div>
+          )}
+
+          {a.message && (
+            <div style={{
+              marginTop: '14px',
+              padding: '10px 12px',
+              background: TOKENS.accentSoft,
+              borderRadius: '8px',
+              fontFamily: FONTS.hand,
+              fontSize: '17px',
+              color: TOKENS.accentStrong,
+              lineHeight: 1.3,
+              textAlign: 'center',
+              whiteSpace: 'pre-wrap',
+            }}>
+              {a.message}
+            </div>
+          )}
+
+          <div style={{ marginTop: '14px', textAlign: 'right' }}>
+            <button
+              onClick={() => {
+                if (confirm('Smazat tohle výročí?')) {
+                  dispatch({ type: 'DELETE_ANNIVERSARY', id: a.id });
+                  if (list.length === 1) onClose();
+                }
+              }}
+              style={{
+                padding: '4px 10px',
+                fontSize: '11px',
+                color: TOKENS.textMuted,
+                background: 'transparent',
+                border: `1px solid ${TOKENS.borderSoft}`,
+                borderRadius: '999px',
+                fontFamily: FONTS.body,
+                cursor: 'pointer',
+              }}
+            >
+              smazat výročí
+            </button>
+          </div>
+        </DoodleNotePaper>
+      ))}
+    </div>
+  );
+}
+
+// Seznam všech výročí — z Nastavení.
+function AnniversariesList({ state, dispatch, onClose }) {
+  const list = (state.anniversaries || []).slice().sort((a, b) => {
+    return (a.originalDate || '').localeCompare(b.originalDate || '');
+  });
+
+  const fmt = (dateStr) => {
+    if (!dateStr) return '';
+    const p = parseDate(dateStr);
+    return `${p.d}. ${MONTHS_LOWER[p.m]} ${p.y}`;
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+      <div style={{ fontSize: '12.5px', color: TOKENS.textSecondary, fontFamily: FONTS.body, marginTop: '-4px' }}>
+        Tady jsou všechny okamžiky, které sis přála pamatovat. Srdíčko v kalendáři se objeví rok po datu.
+      </div>
+
+      {list.length === 0 ? (
+        <div style={{
+          padding: '40px 16px',
+          textAlign: 'center',
+          fontFamily: FONTS.hand,
+          fontSize: '22px',
+          color: TOKENS.textMuted,
+          background: TOKENS.bgSoft,
+          borderRadius: '10px',
+        }}>
+          zatím nic.<br />
+          <span style={{ fontSize: '14px' }}>po skončené schůzce se zeptám, jestli si to mám zapamatovat.</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {list.map(a => (
+            <div key={a.id} style={{
+              padding: '12px 14px',
+              border: `1px solid ${TOKENS.borderSoft}`,
+              borderRadius: '10px',
+              background: TOKENS.bg,
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '12px',
+            }}>
+              <DoodleHeart size={18} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  fontFamily: FONTS.body,
+                  fontSize: '13.5px',
+                  fontWeight: 700,
+                  color: TOKENS.text,
+                }}>
+                  {a.title}
+                </div>
+                <div style={{
+                  fontFamily: FONTS.mono,
+                  fontSize: '10.5px',
+                  letterSpacing: '0.08em',
+                  color: TOKENS.textMuted,
+                  marginTop: '2px',
+                }}>
+                  {fmt(a.originalDate)}
+                  {a.meta && <span style={{ marginLeft: '8px' }}>· {a.meta}</span>}
+                </div>
+                {a.message && (
+                  <div style={{
+                    marginTop: '6px',
+                    fontFamily: FONTS.hand,
+                    fontSize: '16px',
+                    color: TOKENS.accentStrong,
+                    lineHeight: 1.25,
+                  }}>
+                    {a.message}
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  if (confirm('Smazat tohle výročí?')) {
+                    dispatch({ type: 'DELETE_ANNIVERSARY', id: a.id });
+                  }
+                }}
+                style={{
+                  width: '28px', height: '28px', padding: 0,
+                  background: 'transparent',
+                  border: `1px solid ${TOKENS.borderSoft}`,
+                  borderRadius: '6px',
+                  color: TOKENS.textSecondary,
+                  cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+                title="Smazat"
+              >
+                <Trash2 size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CategoryForm({ state, dispatch, onClose, category }) {
   const [name, setName] = useState(category.name);
   const [color, setColor] = useState(category.color);
@@ -3017,6 +3500,37 @@ function SettingsForm({ state, dispatch, onClose }) {
         }}
       >
         Otestovat vzhled upozornění (náhled)
+      </button>
+
+      <div style={{
+        marginTop: '8px',
+        fontFamily: FONTS.mono,
+        fontSize: '10.5px',
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: TOKENS.textMuted,
+        fontWeight: 700,
+      }}>Výročí</div>
+      <button
+        onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'anniversariesList' } })}
+        style={{
+          padding: '12px 14px',
+          borderRadius: '10px',
+          background: TOKENS.bgSoft,
+          border: `1px solid ${TOKENS.borderSoft}`,
+          color: TOKENS.text,
+          fontFamily: FONTS.body,
+          fontWeight: 600,
+          fontSize: '13px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+        }}
+      >
+        <DoodleHeart size={16} />
+        Seznam výročí ({(state.anniversaries || []).length})
       </button>
 
       <div style={{
@@ -3806,10 +4320,15 @@ function MiniMonth({ state, dispatch }) {
     const isToday = dateStr === today;
     const isSelected = selectedDay === dateStr;
     const content = hasContent(d);
+    const dayAnniv = anniversariesForDay(state, dateStr);
     cells.push(
       <button
         key={d}
-        onClick={() => {
+        onClick={(ev) => {
+          if (ev.target.closest('[data-heart]')) {
+            dispatch({ type: 'OPEN_MODAL', modal: { type: 'anniversaryDay', data: { day: dateStr } } });
+            return;
+          }
           dispatch({ type: 'SELECT_DAY', day: dateStr });
           if (state.view === 'todo') {
             dispatch({ type: 'OPEN_MODAL', modal: { type: 'newTask', data: { scheduledDate: dateStr } } });
@@ -3838,6 +4357,15 @@ function MiniMonth({ state, dispatch }) {
         }}
       >
         {isToday && <TodayDoodle inset="-2px" strokeWidth={1.8} />}
+        {dayAnniv.length > 0 && (
+          <span
+            data-heart
+            style={{ position: 'absolute', top: '0px', right: '0px', zIndex: 3, cursor: 'pointer' }}
+            title="Výročí"
+          >
+            <DoodleHeart size={9} />
+          </span>
+        )}
         <span style={{ position: 'relative', zIndex: 1 }}>{d}</span>
         {content && (
           <div style={{
@@ -4391,11 +4919,16 @@ function DesktopMonthGrid({ state, dispatch }) {
     ];
     const visible = items.slice(0, 3);
     const overflow = items.length - visible.length;
+    const dayAnniv = anniversariesForDay(state, dateStr);
 
     cells.push(
       <button
         key={d}
-        onClick={() => {
+        onClick={(ev) => {
+          if (ev.target.closest('[data-heart]')) {
+            dispatch({ type: 'OPEN_MODAL', modal: { type: 'anniversaryDay', data: { day: dateStr } } });
+            return;
+          }
           dispatch({ type: 'SELECT_DAY', day: dateStr });
           dispatch({ type: 'OPEN_MODAL', modal: { type: 'dayDetail', data: { day: dateStr } } });
         }}
@@ -4415,6 +4948,15 @@ function DesktopMonthGrid({ state, dispatch }) {
           fontFamily: FONTS.body,
         }}
       >
+        {dayAnniv.length > 0 && (
+          <span
+            data-heart
+            style={{ position: 'absolute', top: '6px', right: '8px', zIndex: 3, cursor: 'pointer', padding: '2px' }}
+            title="Výročí"
+          >
+            <DoodleHeart size={14} />
+          </span>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {isToday ? (
             <div style={{
