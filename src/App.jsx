@@ -1,5 +1,7 @@
 import React, { useReducer, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Bell, MapPin, Cake, Bug, Check, Pin, PinOff, Trash2, Settings, Search, Calendar as CalIcon, ListTodo, StickyNote, ArrowRight } from 'lucide-react';
+import AuthGate from './components/AuthGate';
+import { useCloudSync, signOutCloud } from './lib/useCloudSync';
 
 // ============ VIEWPORT HOOK ============
 
@@ -170,6 +172,14 @@ function reducer(state, action) {
       return { ...state, askedEventIds: [...new Set([...(state.askedEventIds || []), action.eventId])] };
     case 'SET_FEATURE_MARK':
       return { ...state, featureMarks: { ...(state.featureMarks || {}), [action.key]: action.value } };
+    case 'SYNC_REPLACE': {
+      // Bulk replace z cloudu. Hodnoty == undefined ponecháváme.
+      const next = { ...state };
+      for (const [k, v] of Object.entries(action.state || {})) {
+        if (v !== undefined) next[k] = v;
+      }
+      return next;
+    }
     default:
       return state;
   }
@@ -677,8 +687,17 @@ function findPendingAnniversaryEvent(state) {
 }
 
 export default function App() {
+  return (
+    <AuthGate>
+      <AppInner />
+    </AuthGate>
+  );
+}
+
+function AppInner() {
   const [state, dispatch] = useReducer(reducer, null, loadInitialState);
   const { isDesktop } = useViewport();
+  useCloudSync(state, dispatch);
 
   useEffect(() => {
     saveState(state);
@@ -3553,6 +3572,27 @@ function SettingsForm({ state, dispatch, onClose }) {
         }}>TIP</div>
         Úkoly můžete připnout na konkrétní den kalendáře — otevřete úkol a nastavte datum. Objeví se jako barevné kolečko v buňce.
       </div>
+
+      <button
+        onClick={async () => {
+          await signOutCloud();
+          window.location.reload();
+        }}
+        style={{
+          marginTop: '20px',
+          padding: '11px 14px',
+          background: 'transparent',
+          border: `1px solid ${TOKENS.border}`,
+          borderRadius: '10px',
+          color: TOKENS.textSecondary,
+          fontFamily: FONTS.body,
+          fontWeight: 500,
+          fontSize: '13px',
+          cursor: 'pointer',
+        }}
+      >
+        Odhlásit se
+      </button>
     </div>
   );
 }
