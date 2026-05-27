@@ -54,8 +54,9 @@ const NAME_DAYS: Record<string, string> = {
 };
 
 // Časové okno: notifikaci považujeme za "k odpálení", pokud její target time
-// je v intervalu [now - 30s, now + 60s]. Tím pokryjeme nedokonalou periodicitu cronu.
-const WINDOW_BEFORE_MS = 30 * 1000;
+// je v intervalu [now - 5min, now + 1min]. sent_notifications zabraňuje duplicitě,
+// takže širší okno bezpečně dohoní notifikace, které jeden tick minul.
+const WINDOW_BEFORE_MS = 5 * 60 * 1000;
 const WINDOW_AFTER_MS = 60 * 1000;
 
 // Která lokální (Europe/Prague) hodina+minuta odpovídá "morning"/"evening" upozorněním

@@ -5,6 +5,14 @@
 -- a tabulka uživatelských nastavení (tichý čas, vypínač).
 -- ============================================================
 
+-- Trigger funkce (znovu, pro jistotu — create or replace je idempotentní).
+create or replace function public.set_updated_at()
+returns trigger language plpgsql as $$
+begin
+  new.updated_at = now();
+  return new;
+end $$;
+
 -- ============================================================
 -- sent_notifications
 -- Zaznamenává, kterou notifikaci jsme už odeslali, abychom ji
