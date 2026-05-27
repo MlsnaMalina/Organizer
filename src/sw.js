@@ -17,30 +17,47 @@ self.addEventListener('activate', (event) => {
 
 // ============ PUSH NOTIFICATION ============
 self.addEventListener('push', (event) => {
-  let data = {};
-  try {
-    data = event.data ? event.data.json() : {};
-  } catch {
-    data = { title: 'Organizér', body: event.data ? event.data.text() : '' };
-  }
+  event.waitUntil((async () => {
+    let data = {};
+    try {
+      data = event.data ? event.data.json() : {};
+    } catch {
+      data = { title: 'Organizér', body: event.data ? event.data.text() : '' };
+    }
 
-  const title = data.title || 'Organizér';
-  const options = {
-    body: data.body || '',
-    icon: '/icon-192.png',
-    badge: '/icon-192.png',
-    tag: data.tag || 'organizer',
-    renotify: true,
-    requireInteraction: false,
-    data: {
-      url: data.url || '/',
-      targetKind: data.targetKind || null,
-      targetId: data.targetId || null,
-    },
-    actions: data.actions || [],
-  };
+    // Pokud má uživatel appku otevřenou a viditelnou, NEUKAZUJEME systémovou
+    // bublinu — místo toho pošleme zprávu do okna, kde se zobrazí plnohodnotný
+    // doodle pop-up (NotifModal).
+    const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const visible = all.find(c => c.visibilityState === 'visible');
+    if (visible) {
+      visible.postMessage({ type: 'NOTIF_INLINE', data });
+      return;
+    }
 
-  event.waitUntil(self.registration.showNotification(title, options));
+    // Appka zavřená nebo na pozadí → systémová notifikace.
+    const title = data.title || 'Organizér';
+    const options = {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: data.tag || 'organizer',
+      renotify: true,
+      requireInteraction: true,   // drží na obrazovce, dokud nezareaguješ
+      data: {
+        url: data.url || '/',
+        targetKind: data.targetKind || null,
+        targetId: data.targetId || null,
+        notifPayload: data,        // celý payload pro doodle popup po kliknutí
+      },
+      actions: [
+        { action: 'open', title: 'Otevřít' },
+        { action: 'snooze', title: 'Posunout (10 min)' },
+      ],
+    };
+
+    await self.registration.showNotification(title, options);
+  })());
 });
 
 // ============ NOTIFICATION CLICK ============

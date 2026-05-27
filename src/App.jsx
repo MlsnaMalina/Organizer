@@ -697,12 +697,32 @@ export default function App() {
 
 function AppInner() {
   const [state, dispatch] = useReducer(reducer, null, loadInitialState);
+  const [pushNotif, setPushNotif] = useState(null);
   const { isDesktop } = useViewport();
   useCloudSync(state, dispatch);
 
   useEffect(() => {
     saveState(state);
   }, [state]);
+
+  // Naslouchání zprávám ze service workeru (push došel, klik na notifikaci).
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const handler = (ev) => {
+      const msg = ev.data;
+      if (!msg) return;
+      if (msg.type === 'NOTIF_INLINE') {
+        // Appka byla otevřená, push dorazil — ukáže doodle pop-up místo systémové bubliny.
+        setPushNotif(msg.data);
+      } else if (msg.type === 'NOTIF_OPEN') {
+        // Uživatel klikl na systémovou notifikaci — otevři pop-up.
+        const payload = msg.target?.notifPayload || msg.target;
+        if (payload?.ui || payload?.title) setPushNotif(payload);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', handler);
+    return () => navigator.serviceWorker.removeEventListener('message', handler);
+  }, []);
 
   // Jednorázové označení "od teď sleduj výročí" — abychom se neptali na starou historii.
   useEffect(() => {
@@ -720,6 +740,7 @@ function AppInner() {
         <DesktopApp state={state} dispatch={dispatch} />
         {state.modal && <Modal state={state} dispatch={dispatch} />}
         {pendingAnnivEvent && <AnniversaryPrompt event={pendingAnnivEvent} dispatch={dispatch} />}
+        {pushNotif && <PushNotifPopup data={pushNotif} onClose={() => setPushNotif(null)} />}
       </>
     );
   }
@@ -751,8 +772,26 @@ function AppInner() {
           {state.modal && <Modal state={state} dispatch={dispatch} />}
         </div>
         {pendingAnnivEvent && <AnniversaryPrompt event={pendingAnnivEvent} dispatch={dispatch} />}
+        {pushNotif && <PushNotifPopup data={pushNotif} onClose={() => setPushNotif(null)} />}
       </div>
     </>
+  );
+}
+
+// Wrapper kolem NotifModal pro push notifikaci doručenou z service workeru.
+function PushNotifPopup({ data, onClose }) {
+  const ui = data?.ui || {};
+  const kindMap = { appointment: 'appointment', birthday: 'birthday', nameday: 'nameday', task: 'task', other: 'other' };
+  return (
+    <NotifModal
+      kind={kindMap[ui.kind] || 'other'}
+      headline={ui.headline || ''}
+      lead={ui.lead || data?.title || ''}
+      title={ui.title || data?.body || ''}
+      meta={ui.meta || null}
+      onSnooze={onClose}
+      onConfirm={onClose}
+    />
   );
 }
 

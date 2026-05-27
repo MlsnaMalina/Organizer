@@ -212,6 +212,12 @@ Deno.serve(async (req) => {
       title: string; body: string;
       targetKind: string; targetId: string; notifKind: string;
       url?: string;
+      // Strukturovaná data pro doodle pop-up v appce (NotifModal)
+      uiKind?: string;       // 'appointment' | 'birthday' | 'nameday' | 'task' | 'other'
+      uiHeadline?: string;   // 'za 15 minut', 'dnes', ...
+      uiLead?: string;       // 'Schůzka', 'Narozeniny', 'Úkol · Práce', ...
+      uiTitle?: string;      // jméno osoby / titulek úkolu
+      uiMeta?: string;       // '10:00 — 11:30 · doma' / '38 let' / ...
     }> = [];
 
     // === ÚKOLY ===
@@ -238,6 +244,11 @@ Deno.serve(async (req) => {
                 targetKind: 'task',
                 targetId: t.id,
                 notifKind: kind,
+                uiKind: 'task',
+                uiHeadline: notifLabel(kind),
+                uiLead: 'Úkol',
+                uiTitle: t.title,
+                uiMeta: String(t.time).slice(0, 5),
               });
             }
           }
@@ -251,6 +262,10 @@ Deno.serve(async (req) => {
                 targetKind: 'task',
                 targetId: t.id,
                 notifKind: 'morning',
+                uiKind: 'task',
+                uiHeadline: 'dnes',
+                uiLead: 'Úkol',
+                uiTitle: t.title,
               });
             }
             if (isEveningTick) {
@@ -260,6 +275,10 @@ Deno.serve(async (req) => {
                 targetKind: 'task',
                 targetId: t.id,
                 notifKind: 'evening',
+                uiKind: 'task',
+                uiHeadline: 'stále otevřený',
+                uiLead: 'Úkol',
+                uiTitle: t.title,
               });
             }
           }
@@ -291,6 +310,10 @@ Deno.serve(async (req) => {
             targetKind: 'event',
             targetId: e.id,
             notifKind: 'morning',
+            uiKind: 'birthday',
+            uiHeadline: 'dnes',
+            uiLead: 'Narozeniny',
+            uiTitle: e.person,
           });
         }
         continue;
@@ -303,12 +326,21 @@ Deno.serve(async (req) => {
           const fireAt = shiftBefore(targetUtc, kind);
           if (inWindow(fireAt, now)) {
             const label = e.type === 'appointment' ? 'Schůzka' : (e.custom_label || 'Událost');
+            const timeRange = e.end_time
+              ? `${String(e.time).slice(0,5)} — ${String(e.end_time).slice(0,5)}`
+              : String(e.time).slice(0,5);
+            const meta = e.location ? `${timeRange} · ${e.location}` : timeRange;
             toSend.push({
               title: `${label} — ${notifLabel(kind)}`,
               body: `${e.person}${e.location ? ` · ${e.location}` : ''}`,
               targetKind: 'event',
               targetId: e.id,
               notifKind: kind,
+              uiKind: e.type === 'appointment' ? 'appointment' : 'other',
+              uiHeadline: notifLabel(kind),
+              uiLead: label,
+              uiTitle: e.person,
+              uiMeta: meta,
             });
           }
         }
@@ -321,6 +353,11 @@ Deno.serve(async (req) => {
           targetKind: 'event',
           targetId: e.id,
           notifKind: 'morning',
+          uiKind: e.type === 'appointment' ? 'appointment' : 'other',
+          uiHeadline: 'dnes',
+          uiLead: label,
+          uiTitle: e.person,
+          uiMeta: e.location || undefined,
         });
       }
     }
@@ -340,6 +377,10 @@ Deno.serve(async (req) => {
           targetKind: 'nameday',
           targetId: `${todayYmd}-${p.id}`,
           notifKind: 'morning',
+          uiKind: 'nameday',
+          uiHeadline: 'dnes',
+          uiLead: 'Svátek slaví',
+          uiTitle: fullName,
         });
       }
     }
@@ -369,6 +410,14 @@ Deno.serve(async (req) => {
         url: '/',
         targetKind: n.targetKind,
         targetId: n.targetId,
+        // Strukturovaná data pro doodle pop-up v appce
+        ui: {
+          kind: n.uiKind || 'other',
+          headline: n.uiHeadline || '',
+          lead: n.uiLead || '',
+          title: n.uiTitle || n.body,
+          meta: n.uiMeta || null,
+        },
       });
 
       for (const sub of userSubs) {
