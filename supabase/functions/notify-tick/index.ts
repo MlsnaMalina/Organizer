@@ -103,17 +103,34 @@ function mmdd(m: number, d: number) {
   return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-// "Posun zpět" o offset (15min/1h/1d). 1d = 8:00 dne před.
-function shiftBefore(target: Date, kind: '15min' | '1h' | '1d', baseDate?: { y: number; m: number; d: number }): Date {
-  if (kind === '15min') return new Date(target.getTime() - 15 * 60 * 1000);
+// "Posun zpět" o offset (15m / 1h / 1d). 1d = 8:00 dne před.
+type NotifKind = '15m' | '1h' | '1d';
+
+function shiftBefore(target: Date, kind: NotifKind): Date {
+  if (kind === '15m') return new Date(target.getTime() - 15 * 60 * 1000);
   if (kind === '1h') return new Date(target.getTime() - 60 * 60 * 1000);
   if (kind === '1d') {
-    // 8:00 dne před `baseDate`
+    // 8:00 dne před
     const yesterday = new Date(target.getTime() - 24 * 60 * 60 * 1000);
     const pp = pragueParts(yesterday);
     return pragueToUtc(pp.y, pp.m, pp.d, MORNING_HOUR, MORNING_MIN);
   }
   return target;
+}
+
+// Z hodnoty pole 'notification' rozbalíme seznam kindů k odpálení.
+// 'cascade' = všechna 3 upozornění (1d → 1h → 15m).
+function expandNotificationKinds(value: string | null | undefined): NotifKind[] {
+  if (!value) return [];
+  if (value === 'cascade') return ['1d', '1h', '15m'];
+  if (value === '15m' || value === '1h' || value === '1d') return [value];
+  // Legacy fallback: někde se mohlo zapsat '15min' místo '15m'
+  if (value === '15min') return ['15m'];
+  return [];
+}
+
+function notifLabel(kind: NotifKind): string {
+  return kind === '15m' ? 'za 15 minut' : kind === '1h' ? 'za hodinu' : 'zítra';
 }
 
 function inWindow(target: Date, now: Date): boolean {
@@ -208,19 +225,19 @@ Deno.serve(async (req) => {
 
       for (const t of tasks || []) {
         if (t.time) {
-          // Úkol s časem: 15min/1h/1d before
+          // Úkol s časem: 15m / 1h / 1d (případně cascade = všechny tři)
           const [hh, mm] = String(t.time).split(':').map(Number);
           const [y, m, d] = String(t.scheduled_date).split('-').map(Number);
           const targetUtc = pragueToUtc(y, m, d, hh, mm);
-          if (t.notification && ['15min', '1h', '1d'].includes(t.notification)) {
-            const fireAt = shiftBefore(targetUtc, t.notification as any);
+          for (const kind of expandNotificationKinds(t.notification)) {
+            const fireAt = shiftBefore(targetUtc, kind);
             if (inWindow(fireAt, now)) {
               toSend.push({
                 title: 'Úkol',
-                body: `${t.notification === '15min' ? 'za 15 min' : t.notification === '1h' ? 'za hodinu' : 'zítra'}: ${t.title}`,
+                body: `${notifLabel(kind)}: ${t.title}`,
                 targetKind: 'task',
                 targetId: t.id,
-                notifKind: t.notification,
+                notifKind: kind,
               });
             }
           }
@@ -279,20 +296,21 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      if (e.time && e.notification && ['15min', '1h', '1d'].includes(e.notification)) {
+      if (e.time && e.notification) {
         const [hh, mm] = String(e.time).split(':').map(Number);
         const targetUtc = pragueToUtc(y, m, d, hh, mm);
-        const fireAt = shiftBefore(targetUtc, e.notification as any);
-        if (inWindow(fireAt, now)) {
-          const headline = e.notification === '15min' ? 'za 15 minut' : e.notification === '1h' ? 'za hodinu' : 'zítra';
-          const label = e.type === 'appointment' ? 'Schůzka' : (e.custom_label || 'Událost');
-          toSend.push({
-            title: `${label} — ${headline}`,
-            body: `${e.person}${e.location ? ` · ${e.location}` : ''}`,
-            targetKind: 'event',
-            targetId: e.id,
-            notifKind: e.notification,
-          });
+        for (const kind of expandNotificationKinds(e.notification)) {
+          const fireAt = shiftBefore(targetUtc, kind);
+          if (inWindow(fireAt, now)) {
+            const label = e.type === 'appointment' ? 'Schůzka' : (e.custom_label || 'Událost');
+            toSend.push({
+              title: `${label} — ${notifLabel(kind)}`,
+              body: `${e.person}${e.location ? ` · ${e.location}` : ''}`,
+              targetKind: 'event',
+              targetId: e.id,
+              notifKind: kind,
+            });
+          }
         }
       } else if (!e.time && e.date === todayYmd && isMorningTick) {
         // Celodenní událost — ráno
