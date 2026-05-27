@@ -4852,8 +4852,6 @@ function DesktopMonthSection({ state, dispatch }) {
       border: `1px solid ${TOKENS.borderSoft}`,
       borderRadius: '14px',
       overflow: 'hidden',
-      flex: 1,
-      minHeight: '420px',
       display: 'flex',
       flexDirection: 'column',
     }}>
@@ -4982,7 +4980,8 @@ function DesktopMonthGrid({ state, dispatch }) {
           gap: '4px',
           alignItems: 'stretch',
           textAlign: 'left',
-          minHeight: '90px',
+          minHeight: 0,
+          overflow: 'hidden',
           position: 'relative',
           fontFamily: FONTS.body,
         }}
@@ -5156,7 +5155,7 @@ function DesktopMonthGrid({ state, dispatch }) {
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-        flex: 1,
+        gridAutoRows: '86px',
         gap: '1px',
         background: TOKENS.borderSoft,
       }}>
