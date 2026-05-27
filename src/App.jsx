@@ -4525,7 +4525,6 @@ function DesktopCalendarView({ state, dispatch }) {
       flexDirection: 'column',
       gap: '18px',
     }}>
-      <SlimRibbon state={state} />
       <TimelineStrip state={state} dispatch={dispatch} />
       <DesktopMonthSection state={state} dispatch={dispatch} />
     </div>
@@ -4681,12 +4680,12 @@ function TimelineStrip({ state, dispatch }) {
       background: TOKENS.bg,
       border: `1px solid ${TOKENS.borderSoft}`,
       borderRadius: '14px',
-      padding: '14px 20px 16px',
+      padding: '10px 16px 12px',
     }}>
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
-        marginBottom: '8px',
+        marginBottom: '6px',
         position: 'relative',
       }}>
         {hourMarks.map(h => (
@@ -4704,10 +4703,10 @@ function TimelineStrip({ state, dispatch }) {
 
       <div style={{
         position: 'relative',
-        height: '60px',
+        height: '44px',
         background: `linear-gradient(180deg, ${TOKENS.bgSoft} 0%, ${TOKENS.bg} 100%)`,
         border: `1px solid ${TOKENS.borderSoft}`,
-        borderRadius: '10px',
+        borderRadius: '8px',
       }}>
         {/* Vertical guide lines */}
         {hourMarks.slice(1, -1).map((h, i) => (
@@ -4734,12 +4733,12 @@ function TimelineStrip({ state, dispatch }) {
               onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: e._derived ? 'people' : 'editEvent', data: e._derived ? null : e } })}
               style={{
                 position: 'absolute',
-                top: '6px',
+                top: '3px',
                 left: `${startPct}%`,
                 width: width,
                 maxWidth: hasRange ? undefined : '220px',
                 minWidth: hasRange ? undefined : '90px',
-                padding: '4px 8px 4px 8px',
+                padding: '3px 7px',
                 background: `${cfg.color}15`,
                 borderLeft: `3px solid ${cfg.color}`,
                 borderRadius: '4px',
@@ -4784,7 +4783,7 @@ function TimelineStrip({ state, dispatch }) {
               onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'editTask', data: t } })}
               style={{
                 position: 'absolute',
-                bottom: '6px',
+                bottom: '4px',
                 left: `${left}%`,
                 display: 'flex',
                 alignItems: 'center',
