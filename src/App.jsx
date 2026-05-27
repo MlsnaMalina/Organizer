@@ -1,6 +1,7 @@
 import React, { useReducer, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Plus, X, Bell, MapPin, Cake, Bug, Check, Pin, PinOff, Trash2, Settings, Search, Calendar as CalIcon, ListTodo, StickyNote, ArrowRight } from 'lucide-react';
 import AuthGate from './components/AuthGate';
+import PushNotificationsPanel from './components/PushNotificationsPanel';
 import { useCloudSync, signOutCloud } from './lib/useCloudSync';
 
 // ============ VIEWPORT HOOK ============
@@ -3503,6 +3504,9 @@ function SettingsForm({ state, dispatch, onClose }) {
         color: TOKENS.textMuted,
         fontWeight: 700,
       }}>Upozornění</div>
+
+      <PushNotificationsPanel />
+
       <button
         onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'notifDemo' } })}
         style={{
