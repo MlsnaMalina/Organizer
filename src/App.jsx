@@ -238,6 +238,76 @@ const NAME_DAYS = {
   '12-21':'Natálie','12-22':'Šimon','12-23':'Vlasta','12-24':'Adam a Eva','12-25':'Boží hod vánoční','12-26':'Štěpán','12-27':'Žaneta','12-28':'Bohumila','12-29':'Judita','12-30':'David','12-31':'Silvestr',
 };
 
+// ============ SPECIÁLNÍ SVÁTKY ============
+// Pohanské kolo roku (8 sabbatů) — pro slunovraty/rovnodennosti používáme
+// zjednodušení (vždy 21./22.), reálné datum se mírně mění rok od roku.
+const PAGAN_WHEEL = {
+  '02-01': 'Imbolc',
+  '03-21': 'Ostara · jarní rovnodennost',
+  '05-01': 'Beltane',
+  '06-21': 'Litha · letní slunovrat',
+  '08-01': 'Lughnasadh',
+  '09-22': 'Mabon · podzimní rovnodennost',
+  '10-31': 'Samhain',
+  '12-21': 'Yule · zimní slunovrat',
+};
+
+// Vánoce a další fixní svátky, které nejsou v NAME_DAYS
+const FIXED_HOLIDAYS = {
+  '12-24': 'Štědrý den',
+};
+
+// Velikonoce — Gauss / Meeus-Jones-Butcher computus algorithm
+function computeEaster(year) {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const monthNum = Math.floor((h + l - 7 * m + 114) / 31);
+  const dayNum = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, monthNum - 1, dayNum);
+}
+
+function getEasterHolidays(year) {
+  const easter = computeEaster(year);
+  const goodFriday = new Date(easter); goodFriday.setDate(easter.getDate() - 2);
+  const easterMonday = new Date(easter); easterMonday.setDate(easter.getDate() + 1);
+  const key = (d) => fmtDate(d.getFullYear(), d.getMonth(), d.getDate());
+  return {
+    [key(goodFriday)]: 'Velký pátek',
+    [key(easter)]: 'Velikonoční neděle',
+    [key(easterMonday)]: 'Velikonoční pondělí',
+  };
+}
+
+// Cache Velikonoc per rok (počítají se z roku)
+const _easterCache = {};
+function getEasterForYear(year) {
+  if (!_easterCache[year]) _easterCache[year] = getEasterHolidays(year);
+  return _easterCache[year];
+}
+
+// Vrátí pole speciálních svátků pro daný den (YYYY-MM-DD).
+// Každý item: { name, kind: 'pagan' | 'fixed' | 'easter' }
+function specialHolidaysForDay(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const mmdd = dateStr.slice(5);
+  const result = [];
+  if (PAGAN_WHEEL[mmdd]) result.push({ name: PAGAN_WHEEL[mmdd], kind: 'pagan' });
+  if (FIXED_HOLIDAYS[mmdd]) result.push({ name: FIXED_HOLIDAYS[mmdd], kind: 'fixed' });
+  const easter = getEasterForYear(y);
+  if (easter[dateStr]) result.push({ name: easter[dateStr], kind: 'easter' });
+  return result;
+}
+
 // Inverzní lookup: jméno -> MM-DD (case insensitive, první shoda)
 function nameDayFor(name) {
   if (!name) return null;
@@ -411,6 +481,53 @@ function DoodleButton({ children, onClick, variant = 'outline', size = 'md' }) {
 }
 
 // Doodle ikony podle typu události — všechny v malinové, kreslené volnou rukou.
+// Malé barevné pruhy / pilulky pro speciální svátky (pohanské, vánoční, velikonoční)
+function SpecialHolidayBadges({ dateStr, compact = false }) {
+  const items = specialHolidaysForDay(dateStr);
+  if (items.length === 0) return null;
+  const palette = {
+    pagan:    { bg: '#E9F3E4', border: '#B6D2A8', text: '#43652E', icon: '☾' },
+    easter:   { bg: '#F1E7F5', border: '#C6A8D2', text: '#5E2E65', icon: '✿' },
+    fixed:    { bg: '#FFF1D6', border: '#E6B85F', text: '#7A5318', icon: '✦' },
+  };
+  return (
+    <div style={{
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: compact ? '4px' : '6px',
+      marginTop: compact ? '6px' : '8px',
+    }}>
+      {items.map((h, i) => {
+        const p = palette[h.kind] || palette.fixed;
+        return (
+          <span
+            key={i}
+            title={h.name}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '5px',
+              padding: compact ? '2px 7px' : '3px 9px',
+              background: p.bg,
+              border: `1px solid ${p.border}`,
+              borderRadius: '999px',
+              fontFamily: FONTS.body,
+              fontSize: compact ? '10.5px' : '11.5px',
+              fontWeight: 600,
+              color: p.text,
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <span style={{ fontSize: '11px' }}>{p.icon}</span>
+            {h.name}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function DoodleIcon({ kind, size = 72, color }) {
   const c = color || TOKENS.accent;
   const common = { fill: 'none', stroke: c, strokeWidth: 2.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
@@ -1267,6 +1384,7 @@ function DayDetail({ state, dispatch }) {
           }}>
             {d}. {MONTHS_LOWER[m]}
           </div>
+          <SpecialHolidayBadges dateStr={state.selectedDay} compact />
         </div>
         <button
           onClick={() => dispatch({ type: 'SELECT_DAY', day: null })}
@@ -4358,6 +4476,8 @@ function DesktopSidebar({ state, dispatch }) {
           </>
         )}
 
+        <SpecialHolidayBadges dateStr={todayStr()} />
+
         {myCelebrants.length > 0 && (
           <button
             onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } })}
@@ -5855,6 +5975,7 @@ function DesktopDayRail({ state, dispatch }) {
             >svátek {nameDay}</button></>
           )}
         </div>
+        <SpecialHolidayBadges dateStr={dateStr} compact />
       </div>
 
       {/* Události */}
