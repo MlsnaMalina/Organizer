@@ -5909,6 +5909,16 @@ function DesktopDayRail({ state, dispatch }) {
   const dayEvents = eventsForDay(everyEvent, dateStr);
   const dayTasks = tasksForDay(state.tasks, dateStr);
 
+  // Rozbalování seznamů (defaultně sbalené, sbalí se zpět při změně dne)
+  const [eventsExpanded, setEventsExpanded] = useState(false);
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+  const [upcomingExpanded, setUpcomingExpanded] = useState(false);
+  useEffect(() => {
+    setEventsExpanded(false);
+    setTasksExpanded(false);
+    setUpcomingExpanded(false);
+  }, [dateStr]);
+
   // Upcoming: next 14 days, events + scheduled tasks, excluding selected day
   const upcoming = [];
   const baseDate = new Date(y, m, d);
@@ -6056,7 +6066,16 @@ function DesktopDayRail({ state, dispatch }) {
           <EmptyMini text="Žádné události." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {dayEvents.map(e => <EventCard key={e.id} event={e} dispatch={dispatch} />)}
+            {(eventsExpanded ? dayEvents : dayEvents.slice(0, 3)).map(e =>
+              <EventCard key={e.id} event={e} dispatch={dispatch} />
+            )}
+            {dayEvents.length > 3 && (
+              <ExpandToggle
+                hidden={dayEvents.length - 3}
+                expanded={eventsExpanded}
+                onClick={() => setEventsExpanded(v => !v)}
+              />
+            )}
           </div>
         )}
       </div>
@@ -6094,7 +6113,16 @@ function DesktopDayRail({ state, dispatch }) {
             <EmptyMini text="Žádné úkoly na tento den." />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {dayTasks.map(t => <TaskCard key={t.id} task={t} categories={state.categories} dispatch={dispatch} />)}
+              {(tasksExpanded ? dayTasks : dayTasks.slice(0, 3)).map(t =>
+                <TaskCard key={t.id} task={t} categories={state.categories} dispatch={dispatch} />
+              )}
+              {dayTasks.length > 3 && (
+                <ExpandToggle
+                  hidden={dayTasks.length - 3}
+                  expanded={tasksExpanded}
+                  onClick={() => setTasksExpanded(v => !v)}
+                />
+              )}
             </div>
           )}
         </div>
@@ -6134,13 +6162,44 @@ function DesktopDayRail({ state, dispatch }) {
           <EmptyMini text="Nic dalšího naplánovaného." />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {upcoming.slice(0, 8).map((u, i) => (
+            {(upcomingExpanded ? upcoming : upcoming.slice(0, 3)).map((u, i) => (
               <UpcomingRow key={i} entry={u} categories={state.categories} dispatch={dispatch} baseDate={baseDate} />
             ))}
+            {upcoming.length > 3 && (
+              <ExpandToggle
+                hidden={upcoming.length - 3}
+                expanded={upcomingExpanded}
+                onClick={() => setUpcomingExpanded(v => !v)}
+              />
+            )}
           </div>
         )}
       </div>
     </div>
+  );
+}
+
+// Tlačítko "+N dalších / Zobrazit méně" pro sbalitelné sekce v day rail
+function ExpandToggle({ hidden, expanded, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        marginTop: '2px',
+        padding: '7px 12px',
+        background: 'transparent',
+        border: `1px dashed ${TOKENS.border}`,
+        borderRadius: '8px',
+        color: TOKENS.textSecondary,
+        fontFamily: FONTS.body,
+        fontSize: '11.5px',
+        fontWeight: 600,
+        cursor: 'pointer',
+        textAlign: 'center',
+      }}
+    >
+      {expanded ? 'zobrazit méně' : `+ ${hidden} dalších`}
+    </button>
   );
 }
 
