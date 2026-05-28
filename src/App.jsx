@@ -252,18 +252,24 @@ const PAGAN_WHEEL = {
   '12-21': 'Yule · zimní slunovrat',
 };
 
-// Vánoce a další fixní tradiční svátky (zlaté). Hodnoty jsou pole — víc položek na den.
+// Tradiční / národní / lidskoprávní svátky (zlaté). Hodnoty jsou pole — víc položek na den.
 const FIXED_HOLIDAYS = {
+  '03-08': ['Mezinárodní den žen'],
+  '04-22': ['Den Země'],
+  '06-01': ['Den dětí'],
   '12-24': ['Štědrý den'],
 };
 
-// Popkultura / hravé svátky (růžové) — Star Wars, Ručníkový den, Valentýn jako svátek
-// zamilovaných (nepleť si s NAME_DAYS), Svátek lásky 1. máje.
+// Popkultura / hravé svátky (růžové)
 const FUN_HOLIDAYS = {
   '02-14': ['Svátek zamilovaných'],
+  '04-01': ['Apríl'],
+  '04-23': ['Mezinárodní den knihy'],
   '05-01': ['Svátek lásky (Máchův Máj)'],
   '05-04': ['Den Star Wars · May the 4th'],
   '05-25': ['Ručníkový den'],
+  '07-22': ['Den Harryho Pottera'],
+  '09-21': ['Den Hobbita'],
 };
 
 // Velikonoce — Gauss / Meeus-Jones-Butcher computus algorithm
