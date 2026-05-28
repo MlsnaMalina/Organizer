@@ -2633,6 +2633,14 @@ function fmtDdMm(mmdd) {
   return `${d}. ${MONTHS_LOWER[m - 1]}`;
 }
 
+// "05-22" -> "22.5." (editovatelný formát)
+function mmddToInput(mmdd) {
+  if (!mmdd) return '';
+  const m = parseInt(mmdd.slice(0,2), 10);
+  const d = parseInt(mmdd.slice(3), 10);
+  return `${d}.${m}.`;
+}
+
 // ============ NOTES VIEW (Poznámky) ============
 
 function NotesView({ state, dispatch, desktop }) {
@@ -2943,6 +2951,128 @@ function NoteEditor({ state, dispatch, onClose, note }) {
   );
 }
 
+function PersonRow({ person, onUpdate, onRemove }) {
+  const [name, setName] = useState(person.name || '');
+  const [surname, setSurname] = useState(person.surname || '');
+  const [nameDayStr, setNameDayStr] = useState(mmddToInput(person.nameDay));
+  const [birthday, setBirthday] = useState(person.birthday || '');
+
+  // Sync local hodnoty, když se person změní externě (realtime sync)
+  useEffect(() => { setName(person.name || ''); }, [person.name]);
+  useEffect(() => { setSurname(person.surname || ''); }, [person.surname]);
+  useEffect(() => { setNameDayStr(mmddToInput(person.nameDay)); }, [person.nameDay]);
+  useEffect(() => { setBirthday(person.birthday || ''); }, [person.birthday]);
+
+  const commitName = () => {
+    const v = name.trim();
+    if (!v || v === person.name) return;
+    const patch = { name: v };
+    // Auto-doplnit svátek, jen pokud aktuálně žádný není
+    if (!person.nameDay) {
+      const detected = nameDayFor(v);
+      if (detected) patch.nameDay = detected;
+    }
+    onUpdate(person, patch);
+  };
+
+  const commitSurname = () => {
+    const v = surname.trim() || null;
+    if (v === (person.surname || null)) return;
+    onUpdate(person, { surname: v });
+  };
+
+  const commitNameDay = () => {
+    const v = nameDayStr.trim();
+    if (!v) {
+      if (person.nameDay !== null) onUpdate(person, { nameDay: null });
+      return;
+    }
+    const parsed = parseDdMm(v);
+    if (!parsed) {
+      // neplatný formát — vrať předchozí hodnotu zpět
+      setNameDayStr(mmddToInput(person.nameDay));
+      return;
+    }
+    if (parsed === person.nameDay) return;
+    onUpdate(person, { nameDay: parsed });
+  };
+
+  const commitBirthday = () => {
+    const v = birthday || null;
+    if (v === (person.birthday || null)) return;
+    onUpdate(person, { birthday: v });
+  };
+
+  const cellInput = {
+    ...inputStyle,
+    padding: '6px 8px',
+    fontSize: '12.5px',
+    minHeight: 0,
+  };
+
+  return (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr 0.9fr 1.05fr 28px',
+      gap: '6px',
+      alignItems: 'center',
+      padding: '6px 6px',
+      border: `1px solid ${TOKENS.borderSoft}`,
+      borderRadius: '8px',
+      background: TOKENS.bg,
+    }}>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={commitName}
+        placeholder="jméno"
+        style={{ ...cellInput, fontWeight: 600, color: TOKENS.text }}
+      />
+      <input
+        value={surname}
+        onChange={(e) => setSurname(e.target.value)}
+        onBlur={commitSurname}
+        placeholder="—"
+        style={{ ...cellInput, color: TOKENS.textSecondary }}
+      />
+      <input
+        value={nameDayStr}
+        onChange={(e) => setNameDayStr(e.target.value)}
+        onBlur={commitNameDay}
+        placeholder="DD.MM"
+        title="Formát: 22.5 nebo 22.5."
+        style={{ ...cellInput, color: person.nameDay ? TOKENS.text : TOKENS.textMuted }}
+      />
+      <input
+        type="date"
+        value={birthday}
+        onChange={(e) => setBirthday(e.target.value)}
+        onBlur={commitBirthday}
+        style={cellInput}
+      />
+      <button
+        onClick={() => onRemove(person.id)}
+        title="Smazat"
+        style={{
+          width: '28px',
+          height: '28px',
+          padding: 0,
+          background: 'transparent',
+          border: `1px solid ${TOKENS.borderSoft}`,
+          borderRadius: '6px',
+          color: TOKENS.textSecondary,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Trash2 size={13} />
+      </button>
+    </div>
+  );
+}
+
 function PeopleList({ state, dispatch, onClose }) {
   const [name, setName] = useState('');
   const [surname, setSurname] = useState('');
@@ -2976,6 +3106,10 @@ function PeopleList({ state, dispatch, onClose }) {
 
   const updateField = (person, field, value) => {
     dispatch({ type: 'UPDATE_PERSON', person: { ...person, [field]: value || null } });
+  };
+
+  const updatePerson = (person, patch) => {
+    dispatch({ type: 'UPDATE_PERSON', person: { ...person, ...patch } });
   };
 
   return (
@@ -3092,8 +3226,8 @@ function PeopleList({ state, dispatch, onClose }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '1.4fr 1fr 1fr 28px',
-              gap: '8px',
+              gridTemplateColumns: '1fr 1fr 0.9fr 1.05fr 28px',
+              gap: '6px',
               padding: '4px 6px',
               fontFamily: FONTS.mono,
               fontSize: '9.5px',
@@ -3103,69 +3237,13 @@ function PeopleList({ state, dispatch, onClose }) {
               textTransform: 'uppercase',
             }}>
               <div>Jméno</div>
+              <div>Příjmení</div>
               <div>Svátek</div>
               <div>Narozeniny</div>
               <div />
             </div>
             {people.map(p => (
-              <div key={p.id} style={{
-                display: 'grid',
-                gridTemplateColumns: '1.4fr 1fr 1fr 28px',
-                gap: '8px',
-                alignItems: 'center',
-                padding: '6px 6px',
-                border: `1px solid ${TOKENS.borderSoft}`,
-                borderRadius: '8px',
-                background: TOKENS.bg,
-              }}>
-                <div style={{
-                  fontFamily: FONTS.body,
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: TOKENS.text,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                  {p.name}
-                  {p.surname && <span style={{ color: TOKENS.textSecondary, fontWeight: 500 }}> {p.surname}</span>}
-                </div>
-                <div style={{
-                  fontFamily: FONTS.body,
-                  fontSize: '12.5px',
-                  color: p.nameDay ? TOKENS.text : TOKENS.textMuted,
-                }}>{fmtDdMm(p.nameDay)}</div>
-                <input
-                  type="date"
-                  value={p.birthday || ''}
-                  onChange={(e) => updateField(p, 'birthday', e.target.value)}
-                  style={{
-                    ...inputStyle,
-                    padding: '4px 6px',
-                    fontSize: '12px',
-                    minHeight: 0,
-                  }}
-                />
-                <button
-                  onClick={() => remove(p.id)}
-                  title="Smazat"
-                  style={{
-                    width: '28px',
-                    height: '28px',
-                    padding: 0,
-                    background: 'transparent',
-                    border: `1px solid ${TOKENS.borderSoft}`,
-                    borderRadius: '6px',
-                    color: TOKENS.textSecondary,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Trash2 size={13} />
-                </button>
-              </div>
+              <PersonRow key={p.id} person={p} onUpdate={updatePerson} onRemove={remove} />
             ))}
           </div>
         )}
