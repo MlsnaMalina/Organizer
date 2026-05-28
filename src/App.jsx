@@ -130,7 +130,11 @@ function reducer(state, action) {
     case 'DELETE_TASK':
       return { ...state, tasks: state.tasks.filter(t => t.id !== action.id) };
     case 'TOGGLE_TASK':
-      return { ...state, tasks: state.tasks.map(t => t.id === action.id ? { ...t, completed: !t.completed } : t) };
+      return { ...state, tasks: state.tasks.map(t => {
+        if (t.id !== action.id) return t;
+        const nextCompleted = !t.completed;
+        return { ...t, completed: nextCompleted, completedAt: nextCompleted ? Date.now() : null };
+      }) };
     case 'UPDATE_CATEGORY':
       return { ...state, categories: state.categories.map(c => c.id === action.category.id ? action.category : c) };
     case 'SET_NOTE': {
@@ -617,6 +621,21 @@ function anniversariesForDay(state, dateStr) {
     .filter(x => x.years >= 1);
 }
 
+// Vrátí pole lidí ze seznamu, kteří mají v dané MM-DD daně svátek nebo narozeniny.
+function peopleCelebratingMmdd(state, mmdd) {
+  const list = state.people || [];
+  return list.filter(p => {
+    if (p.nameDay === mmdd) return true;
+    if (p.birthday && p.birthday.slice(5) === mmdd) return true;
+    return false;
+  });
+}
+
+// Konkrétně pro daný YYYY-MM-DD řetězec
+function peopleCelebratingDay(state, dateStr) {
+  return peopleCelebratingMmdd(state, dateStr.slice(5));
+}
+
 // Doodle kroužek kolem dnešního dne — ručně-malovaný look, dvě nepravidelné smyčky.
 // Vždy umisťovat do prvku s position: relative. Slouží jen vizuálně (pointer-events: none).
 function TodayDoodle({ inset = '-4px', strokeWidth = 2.2, color, opacity = 0.95 }) {
@@ -801,9 +820,51 @@ function Header({ view, dispatch, state }) {
   const today = new Date();
   const todayDayName = DAYS_FULL[today.getDay()].toUpperCase();
   const todayDateLabel = `${today.getDate()}. ${MONTHS_LOWER[today.getMonth()]}`;
+  const todayMmdd = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const myCelebrants = peopleCelebratingMmdd(state, todayMmdd);
+  const pulseOn = state.featureMarks?.namedayPulse !== false;
 
   return (
     <div style={{ padding: '20px 16px 12px' }}>
+      {myCelebrants.length > 0 && (
+        <button
+          onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } })}
+          style={{
+            width: '100%',
+            marginBottom: '12px',
+            padding: '8px 12px',
+            background: 'linear-gradient(90deg, #FFF7D6 0%, #FFE89C 100%)',
+            border: '1px solid #E6B800',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: '8px',
+            cursor: 'pointer',
+            flexWrap: 'wrap',
+          }}
+        >
+          <span style={{
+            fontFamily: FONTS.mono,
+            fontSize: '9.5px',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            color: '#8A6800',
+            fontWeight: 700,
+          }}>TVOJI SLAVÍ:</span>
+          <span
+            className={pulseOn ? 'nameday-pulse' : undefined}
+            style={{
+              fontFamily: FONTS.hand,
+              fontSize: '20px',
+              color: '#7A1840',
+              fontWeight: 600,
+              lineHeight: 1,
+            }}
+          >
+            {myCelebrants.map(p => p.name).join(', ')}
+          </span>
+        </button>
+      )}
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -1012,6 +1073,7 @@ function CalendarGrid({ state, dispatch }) {
     const isWeekend = dow === 0 || dow === 6;
 
     const dayAnniv = anniversariesForDay(state, dateStr);
+    const celebrants = peopleCelebratingDay(state, dateStr);
     cells.push(
       <button
         key={d}
@@ -1034,9 +1096,25 @@ function CalendarGrid({ state, dispatch }) {
           color: isWeekend ? TOKENS.textMuted : TOKENS.text,
           cursor: 'pointer',
           position: 'relative',
+          overflow: 'hidden',
           transition: 'all 160ms cubic-bezier(.32,.72,.32,1)',
         }}
       >
+        {celebrants.length > 0 && (
+          <div
+            title={`Slaví: ${celebrants.map(p => p.name).join(', ')}`}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '3px',
+              background: 'linear-gradient(90deg, #FFD84D 0%, #FFC233 100%)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        )}
         {isToday && <TodayDoodle inset="-3px" />}
         {dayAnniv.length > 0 && (
           <span
@@ -1994,6 +2072,7 @@ function TaskForm({ state, dispatch, onClose, task, initial }) {
       time: time || null,
       notification: notification === 'none' ? null : notification,
       completed: task?.completed || false,
+      completedAt: task?.completedAt || null,
     };
     dispatch({ type: task ? 'UPDATE_TASK' : 'ADD_TASK', task: data });
     onClose();
@@ -3596,6 +3675,53 @@ function SettingsForm({ state, dispatch, onClose }) {
       </button>
 
       <div style={{
+        marginTop: '8px',
+        fontFamily: FONTS.mono,
+        fontSize: '10.5px',
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        color: TOKENS.textMuted,
+        fontWeight: 700,
+      }}>Slavící jména</div>
+
+      <button
+        onClick={() => dispatch({
+          type: 'SET_FEATURE_MARK',
+          key: 'namedayPulse',
+          value: state.featureMarks?.namedayPulse === false ? true : false,
+        })}
+        style={{
+          padding: '12px 14px',
+          borderRadius: '10px',
+          background: TOKENS.bgSoft,
+          border: `1px solid ${TOKENS.borderSoft}`,
+          color: TOKENS.text,
+          fontFamily: FONTS.body,
+          fontWeight: 500,
+          fontSize: '13px',
+          cursor: 'pointer',
+          textAlign: 'left',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}
+      >
+        <span>Občas problikávat jméno slavícího</span>
+        <span style={{
+          padding: '3px 9px',
+          borderRadius: '999px',
+          background: state.featureMarks?.namedayPulse === false ? TOKENS.border : `${TOKENS.accent}25`,
+          color: state.featureMarks?.namedayPulse === false ? TOKENS.textMuted : TOKENS.accent,
+          fontFamily: FONTS.mono,
+          fontSize: '10px',
+          fontWeight: 700,
+          letterSpacing: '0.1em',
+        }}>
+          {state.featureMarks?.namedayPulse === false ? 'VYP' : 'ZAP'}
+        </span>
+      </button>
+
+      <div style={{
         marginTop: '16px',
         padding: '14px',
         background: TOKENS.accentSoft,
@@ -4034,6 +4160,8 @@ function DesktopSidebar({ state, dispatch }) {
   const todayMmdd = `${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
   const nameDay = NAME_DAYS[todayMmdd];
   const weekNum = getWeekNumber(today);
+  const myCelebrants = peopleCelebratingMmdd(state, todayMmdd);
+  const pulseOn = state.featureMarks?.namedayPulse !== false;
 
   return (
     <div style={{
@@ -4150,6 +4278,48 @@ function DesktopSidebar({ state, dispatch }) {
               </span>
             </button>
           </>
+        )}
+
+        {myCelebrants.length > 0 && (
+          <button
+            onClick={() => dispatch({ type: 'OPEN_MODAL', modal: { type: 'people' } })}
+            title="Z tvého adresáře"
+            style={{
+              marginTop: '10px',
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: '8px',
+              padding: '8px 10px',
+              background: 'linear-gradient(90deg, #FFF7D6 0%, #FFE89C 100%)',
+              border: '1px solid #E6B800',
+              borderRadius: '10px',
+              cursor: 'pointer',
+              flexWrap: 'wrap',
+            }}
+          >
+            <span style={{
+              fontFamily: FONTS.mono,
+              fontSize: '9.5px',
+              letterSpacing: '0.14em',
+              textTransform: 'uppercase',
+              color: '#8A6800',
+              fontWeight: 700,
+            }}>
+              TVOJI SLAVÍ:
+            </span>
+            <span
+              className={pulseOn ? 'nameday-pulse' : undefined}
+              style={{
+                fontFamily: FONTS.hand,
+                fontSize: '22px',
+                color: '#7A1840',
+                fontWeight: 600,
+                lineHeight: 1,
+              }}
+            >
+              {myCelebrants.map(p => p.name).join(', ')}
+            </span>
+          </button>
         )}
       </div>
 
@@ -4404,6 +4574,7 @@ function MiniMonth({ state, dispatch }) {
     const isSelected = selectedDay === dateStr;
     const content = hasContent(d);
     const dayAnniv = anniversariesForDay(state, dateStr);
+    const celebrants = peopleCelebratingDay(state, dateStr);
     cells.push(
       <button
         key={d}
@@ -4440,6 +4611,22 @@ function MiniMonth({ state, dispatch }) {
         }}
       >
         {isToday && <TodayDoodle inset="-2px" strokeWidth={1.8} />}
+        {celebrants.length > 0 && (
+          <div
+            title={`Slaví: ${celebrants.map(p => p.name).join(', ')}`}
+            style={{
+              position: 'absolute',
+              top: '2px',
+              left: '20%',
+              right: '20%',
+              height: '2px',
+              borderRadius: '2px',
+              background: 'linear-gradient(90deg, #FFD84D 0%, #FFC233 100%)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        )}
         {dayAnniv.length > 0 && (
           <span
             data-heart
@@ -5000,6 +5187,7 @@ function DesktopMonthGrid({ state, dispatch }) {
     const visible = items.slice(0, 3);
     const overflow = items.length - visible.length;
     const dayAnniv = anniversariesForDay(state, dateStr);
+    const celebrants = peopleCelebratingDay(state, dateStr);
 
     cells.push(
       <button
@@ -5029,6 +5217,21 @@ function DesktopMonthGrid({ state, dispatch }) {
           fontFamily: FONTS.body,
         }}
       >
+        {celebrants.length > 0 && (
+          <div
+            title={`Slaví: ${celebrants.map(p => p.name).join(', ')}`}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: 'linear-gradient(90deg, #FFD84D 0%, #FFC233 100%)',
+              pointerEvents: 'none',
+              zIndex: 2,
+            }}
+          />
+        )}
         {dayAnniv.length > 0 && (
           <span
             data-heart

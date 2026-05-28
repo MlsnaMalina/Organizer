@@ -103,8 +103,8 @@ function mmdd(m: number, d: number) {
   return `${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
-// "Posun zpět" o offset (15m / 1h / 1d). 1d = 8:00 dne před.
-type NotifKind = '15m' | '1h' | '1d';
+// "Posun zpět" o offset (15m / 1h / 1d / start). 1d = 8:00 dne před.
+type NotifKind = '15m' | '1h' | '1d' | 'start';
 
 function shiftBefore(target: Date, kind: NotifKind): Date {
   if (kind === '15m') return new Date(target.getTime() - 15 * 60 * 1000);
@@ -115,22 +115,26 @@ function shiftBefore(target: Date, kind: NotifKind): Date {
     const pp = pragueParts(yesterday);
     return pragueToUtc(pp.y, pp.m, pp.d, MORNING_HOUR, MORNING_MIN);
   }
-  return target;
+  return target; // 'start' = bez posunu
 }
 
 // Z hodnoty pole 'notification' rozbalíme seznam kindů k odpálení.
-// 'cascade' = všechna 3 upozornění (1d → 1h → 15m).
+// 'cascade' = všechna 3 upozornění (1d → 1h → 15m). Vždy přidáme 'start'
+// (přesný čas), pokud je notifikace nějakým způsobem zapnuta.
 function expandNotificationKinds(value: string | null | undefined): NotifKind[] {
   if (!value) return [];
-  if (value === 'cascade') return ['1d', '1h', '15m'];
-  if (value === '15m' || value === '1h' || value === '1d') return [value];
+  if (value === 'cascade') return ['1d', '1h', '15m', 'start'];
+  if (value === '15m' || value === '1h' || value === '1d') return [value, 'start'];
   // Legacy fallback: někde se mohlo zapsat '15min' místo '15m'
-  if (value === '15min') return ['15m'];
+  if (value === '15min') return ['15m', 'start'];
   return [];
 }
 
 function notifLabel(kind: NotifKind): string {
-  return kind === '15m' ? 'za 15 minut' : kind === '1h' ? 'za hodinu' : 'zítra';
+  if (kind === '15m') return 'za 15 minut';
+  if (kind === '1h') return 'za hodinu';
+  if (kind === '1d') return 'zítra';
+  return 'právě teď';
 }
 
 function inWindow(target: Date, now: Date): boolean {
@@ -437,6 +441,62 @@ Deno.serve(async (req) => {
             log.push({ push_err: code, msg: e?.message, endpoint: sub.endpoint.slice(-12) });
           }
         }
+      }
+    }
+
+    // === CLEANUP: 5 dní po splnění / skončení ===
+    // (běží idempotentně — co je smazané, je smazané)
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+    const completedCutoff = new Date(now.getTime() - fiveDaysMs).toISOString();
+    const eventCutoffDate = new Date(now.getTime() - fiveDaysMs);
+    const ecPP = pragueParts(eventCutoffDate);
+    const eventCutoffYmd = ymd(ecPP.y, ecPP.m, ecPP.d);
+
+    // Smaž splněné úkoly s completed_at starším než 5 dní
+    const { error: taskDelErr } = await sb
+      .from('tasks')
+      .delete()
+      .eq('user_id', userId)
+      .eq('completed', true)
+      .lt('completed_at', completedCutoff);
+    if (taskDelErr) log.push({ cleanup_task_err: taskDelErr.message });
+
+    // Smaž události (kromě narozenin), které skončily před 5+ dny,
+    // na které se příkaz zeptal (askedEventIds) a nemají uložené výročí.
+    const { data: oldEvents } = await sb
+      .from('events')
+      .select('id, type, date, end_date')
+      .eq('user_id', userId)
+      .neq('type', 'birthday')
+      .lt('date', eventCutoffYmd);
+    if (oldEvents && oldEvents.length > 0) {
+      const { data: askedRows } = await sb
+        .from('asked_events')
+        .select('event_id')
+        .eq('user_id', userId);
+      const askedSet = new Set((askedRows || []).map(r => r.event_id));
+
+      const { data: annivRows } = await sb
+        .from('anniversaries')
+        .select('source_event_id')
+        .eq('user_id', userId);
+      const annivSet = new Set((annivRows || []).map(r => r.source_event_id).filter(Boolean));
+
+      const toDelete = oldEvents.filter(e => {
+        const endStr = e.end_date || e.date;
+        if (endStr >= eventCutoffYmd) return false; // ještě dost čerstvé
+        if (!askedSet.has(e.id)) return false;      // ještě se nezeptáme — zachovat
+        if (annivSet.has(e.id)) return false;        // má výročí — zachovat
+        return true;
+      }).map(e => e.id);
+
+      if (toDelete.length) {
+        const { error: evDelErr } = await sb
+          .from('events')
+          .delete()
+          .eq('user_id', userId)
+          .in('id', toDelete);
+        if (evDelErr) log.push({ cleanup_event_err: evDelErr.message });
       }
     }
   }

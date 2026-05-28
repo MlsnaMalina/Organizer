@@ -13,6 +13,7 @@ export const taskToRow = (task, userId) => ({
   time: nullIfBlank(task.time),
   notification: nullIfBlank(task.notification),
   completed: Boolean(task.completed),
+  completed_at: task.completedAt ? new Date(task.completedAt).toISOString() : null,
 });
 export const rowToTask = (r) => ({
   id: r.id,
@@ -22,6 +23,7 @@ export const rowToTask = (r) => ({
   time: r.time || null,
   notification: r.notification || null,
   completed: Boolean(r.completed),
+  completedAt: r.completed_at ? new Date(r.completed_at).getTime() : null,
 });
 
 // ===== events =====
