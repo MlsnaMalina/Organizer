@@ -252,9 +252,18 @@ const PAGAN_WHEEL = {
   '12-21': 'Yule · zimní slunovrat',
 };
 
-// Vánoce a další fixní svátky, které nejsou v NAME_DAYS
+// Vánoce a další fixní tradiční svátky (zlaté). Hodnoty jsou pole — víc položek na den.
 const FIXED_HOLIDAYS = {
-  '12-24': 'Štědrý den',
+  '12-24': ['Štědrý den'],
+};
+
+// Popkultura / hravé svátky (růžové) — Star Wars, Ručníkový den, Valentýn jako svátek
+// zamilovaných (nepleť si s NAME_DAYS), Svátek lásky 1. máje.
+const FUN_HOLIDAYS = {
+  '02-14': ['Svátek zamilovaných'],
+  '05-01': ['Svátek lásky (Máchův Máj)'],
+  '05-04': ['Den Star Wars · May the 4th'],
+  '05-25': ['Ručníkový den'],
 };
 
 // Velikonoce — Gauss / Meeus-Jones-Butcher computus algorithm
@@ -295,16 +304,42 @@ function getEasterForYear(year) {
   return _easterCache[year];
 }
 
+// N-tá neděle daného měsíce. monthIndex je zero-indexed (0 = leden).
+function nthSundayOfMonth(year, monthIndex, n) {
+  const firstDay = new Date(year, monthIndex, 1).getDay(); // 0=Ne, 1=Po, ...
+  const firstSundayDate = ((7 - firstDay) % 7) + 1; // 1..7
+  return new Date(year, monthIndex, firstSundayDate + (n - 1) * 7);
+}
+
+// Pohyblivé svátky podle data (Den matek, Den otců, ...)
+function getMovableHolidays(year) {
+  const mothersDay = nthSundayOfMonth(year, 4, 2);   // 2. neděle v květnu
+  const fathersDay = nthSundayOfMonth(year, 5, 3);   // 3. neděle v červnu
+  const key = (d) => fmtDate(d.getFullYear(), d.getMonth(), d.getDate());
+  return {
+    [key(mothersDay)]: 'Den matek',
+    [key(fathersDay)]: 'Den otců',
+  };
+}
+const _movableCache = {};
+function getMovableForYear(year) {
+  if (!_movableCache[year]) _movableCache[year] = getMovableHolidays(year);
+  return _movableCache[year];
+}
+
 // Vrátí pole speciálních svátků pro daný den (YYYY-MM-DD).
-// Každý item: { name, kind: 'pagan' | 'fixed' | 'easter' }
+// Každý item: { name, kind: 'pagan' | 'fixed' | 'easter' | 'fun' | 'family' }
 function specialHolidaysForDay(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
+  const [y] = dateStr.split('-').map(Number);
   const mmdd = dateStr.slice(5);
   const result = [];
   if (PAGAN_WHEEL[mmdd]) result.push({ name: PAGAN_WHEEL[mmdd], kind: 'pagan' });
-  if (FIXED_HOLIDAYS[mmdd]) result.push({ name: FIXED_HOLIDAYS[mmdd], kind: 'fixed' });
+  for (const n of FIXED_HOLIDAYS[mmdd] || []) result.push({ name: n, kind: 'fixed' });
+  for (const n of FUN_HOLIDAYS[mmdd] || []) result.push({ name: n, kind: 'fun' });
   const easter = getEasterForYear(y);
   if (easter[dateStr]) result.push({ name: easter[dateStr], kind: 'easter' });
+  const movable = getMovableForYear(y);
+  if (movable[dateStr]) result.push({ name: movable[dateStr], kind: 'family' });
   return result;
 }
 
@@ -489,6 +524,8 @@ function SpecialHolidayBadges({ dateStr, compact = false }) {
     pagan:    { bg: '#E9F3E4', border: '#B6D2A8', text: '#43652E', icon: '☾' },
     easter:   { bg: '#F1E7F5', border: '#C6A8D2', text: '#5E2E65', icon: '✿' },
     fixed:    { bg: '#FFF1D6', border: '#E6B85F', text: '#7A5318', icon: '✦' },
+    fun:      { bg: '#FFE4EE', border: '#E89BB8', text: '#8A1E47', icon: '✺' },
+    family:   { bg: '#E0EEF7', border: '#9CC2DF', text: '#1E4D70', icon: '♥' },
   };
   return (
     <div style={{
